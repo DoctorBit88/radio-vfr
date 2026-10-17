@@ -497,11 +497,14 @@ const W2D = {zero:'0',one:'1',wun:'1',uno:'1',two:'2',too:'2',due:'2',three:'3',
 const csLetters = cs => cs.toLowerCase().replace(/[^a-z0-9]/g, '');
 const csPhon = cs => csLetters(cs).split('').map(c => PHON[c] || c).join(' ');
 const csAbbr = cs => { const l = csLetters(cs); return l.length > 3 ? l[0] + l.slice(-2) : l; };
+function lcsLen(a, b) { const d = Array(b.length + 1).fill(0); for (const ca of a) { let prev = 0; for (let j = 1; j <= b.length; j++) { const tmp = d[j]; d[j] = ca === b[j - 1] ? prev + 1 : Math.max(d[j], d[j - 1]); prev = tmp; } } return d[b.length]; }
+// nominativo riconosciuto anche se il riconoscimento vocale perde una lettera
+function csHeard(n, full) { return n.compact.includes(full) || n.compact.includes(full.slice(1)) || (full.length >= 4 && n.letters.length >= full.length - 1 && lcsLen(n.letters, full) >= full.length - 1); }
 function norm(s) {
   let t = s.toLowerCase().replace(/[-_]/g, '').replace(/[^a-z0-9.àèéìòù ]/g, ' ');
   const toks = t.split(/\s+/).filter(Boolean).map(w => W2L[w] || W2D[w] || w);
   const text = ' ' + toks.join(' ') + ' ';
-  return { text, toks: new Set(toks), compact: toks.join(''), digits: toks.join('').replace(/[^0-9]/g, '') };
+  return { text, toks: new Set(toks), compact: toks.join(''), digits: toks.join('').replace(/[^0-9]/g, ''), letters: toks.filter(t => /^[a-z]$/.test(t)).join('') };
 }
 
 // ---------- Audio: voce radio integrata (meSpeak) o voce del dispositivo, con fruscio ----------
@@ -1022,7 +1025,7 @@ function buildOffline() {
   const name = (c.dep.replace(/^[A-Z]{4}\s*/, '') || 'Training').split(' ')[0];
   const F = { atis: '127.255', gnd: '121.805', twr: '118.705', info: '126.755' };
   const full = csLetters(CS), ab = csAbbr(CS);
-  const cs = { k: 'nominativo', f: n => n.compact.includes(full) || n.compact.includes(full.slice(1)) || n.compact.includes(ab) };
+  const cs = { k: 'nominativo', f: n => csHeard(n, full) || n.compact.includes(ab) };
   const any = (k, ...w) => ({ k, f: n => w.some(x => n.text.includes(' ' + x + ' ') || n.text.includes(x)) });
   const num = (k, ...x) => ({ k, f: n => x.some(v => n.digits.includes(v)) });
   const tok = (k, t) => ({ k, f: n => n.toks.has(t) });
@@ -1160,11 +1163,29 @@ $('#preset-lucca').addEventListener('click', () => {
 
 // ---------- Microfono: tieni premuto per parlare ----------
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+// Unisce pezzi di riconoscimento sovrapposti: "Lucca" + "Lucca informazioni" = "Lucca informazioni"
+function mergeText(a, b) {
+  a = (a || '').replace(/\s+/g, ' ').trim(); b = (b || '').replace(/\s+/g, ' ').trim();
+  if (!a) return b; if (!b) return a;
+  const A = a.toLowerCase(), B = b.toLowerCase();
+  if (B.includes(A)) return b;
+  if (A.includes(B)) return a;
+  const aw = a.split(' '), bw = b.split(' ');
+  for (let k = Math.min(aw.length, bw.length); k >= 1; k--) {
+    let ok = true;
+    for (let i = 0; i < k; i++) if (aw[aw.length - k + i].toLowerCase() !== bw[i].toLowerCase()) { ok = false; break; }
+    if (ok) return aw.concat(bw.slice(k)).join(' ');
+  }
+  return a + ' ' + b;
+}
+// Correzioni dell'alfabeto fonetico che il riconoscimento italiano storpia spesso
+const PHON_FIX = { charleroi: 'Charlie', charly: 'Charlie', charli: 'Charlie', carli: 'Charlie', sciarli: 'Charlie', romy: 'Romeo', romeu: 'Romeo', eco: 'Echo', chilo: 'Kilo', maik: 'Mike', novembre: 'November', uischi: 'Whiskey', iankee: 'Yankee', ianchi: 'Yankee', xray: 'X-ray', golfo: 'Golf' };
+function fixPhon(t) { return t.replace(/[A-Za-zÀ-ÿ-]+/g, w => PHON_FIX[w.toLowerCase()] || w); }
 let rec = null, recOn = false, holding = false, segs = [], cur = '', baseTxt = '', micGen = 0;
 // Ogni sessione di riconoscimento ascolta UNA frase (continuous=false): su Chrome Android
 // la modalità continua ripete i pezzi già riconosciuti. Se tieni ancora premuto quando
 // il telefono chiude la frase, si riparte e si accoda il pezzo successivo.
-function renderMic() { $('#txt').value = [baseTxt].concat(segs, [cur]).filter(Boolean).join(' ').replace(/\s+/g, ' ').trim(); }
+function renderMic() { const said = segs.concat([cur]).reduce(mergeText, ''); $('#txt').value = fixPhon([baseTxt, said].filter(Boolean).join(' ')).replace(/\s+/g, ' ').trim(); }
 function bestOf(result) {
   let best = result[0];
   for (let k = 1; k < result.length; k++) if ((result[k].confidence || 0) > (best.confidence || 0)) best = result[k];
@@ -1179,11 +1200,7 @@ function newRec(gen) {
     // ricostruisce sempre la frase dall'elenco completo, mai per somma di pezzi
     const parts = [];
     for (let i = 0; i < ev.results.length; i++) parts.push(bestOf(ev.results[i]));
-    let t = parts.filter(Boolean).join(' ');
-    // se Android rimanda un risultato che contiene già i precedenti, tieni il più lungo
-    const last = parts[parts.length - 1] || '';
-    if (parts.length > 1 && last.length >= t.length * 0.6 && parts.slice(0, -1).every(p => last.toLowerCase().includes(p.toLowerCase()))) t = last;
-    cur = t; renderMic();
+    cur = parts.reduce(mergeText, ''); renderMic();
   };
   r.onerror = ev => {
     if (gen !== micGen) return;
@@ -1295,8 +1312,8 @@ function isLucca(c) { return /liql|lucca|tassignano/i.test(c.dep || ''); }
 function buildLucca() {
   const c = S.cfg, CS = c.cs, AB = (c.cs[0] + '-' + c.cs.replace(/[^A-Z]/gi, '').slice(-2)).toUpperCase();
   const full = csLetters(CS), ab = csAbbr(CS);
-  const csF = { k: 'nominativo completo (l\'abbreviato solo dopo che lo usa l\'AFIS)', f: n => n.compact.includes(full) || n.compact.includes(full.slice(1)) };
-  const cs = { k: 'nominativo', f: n => n.compact.includes(full) || n.compact.includes(full.slice(1)) || n.compact.includes(ab) };
+  const csF = { k: 'nominativo completo (l\'abbreviato solo dopo che lo usa l\'AFIS)', f: n => csHeard(n, full) };
+  const cs = { k: 'nominativo', f: n => csHeard(n, full) || n.compact.includes(ab) };
   const any = (k, ...w) => ({ k, f: n => w.some(x => n.text.includes(x)) });
   const num = (k, ...x) => ({ k, f: n => x.some(v => n.digits.includes(v)) });
   const lucca = any('chiamata a “Lucca Informazioni”', 'lucca', 'informazion');
