@@ -1113,7 +1113,7 @@ function offTx(text, me) {
   if (parseFloat(S.act).toFixed(3) !== x.freq) { addEval(me, { rating: 'error', issues: [`Nessuna risposta: la frequenza attiva ${S.act} non è quella di ${x.st} (${x.freq}).`] }); return; }
   if (O.rb) {
     const miss0 = offCheck(x.rb, text, x.negRb); offEval(me, miss0, 'rb', x); const miss = realMiss(miss0);
-    if (miss.length && !(S.cfg.diff <= 1 && !miss.includes('nominativo'))) { setTimeout(() => offAtc(`${O.AB}, ${O.negWord || 'negative, I say again:'} ${x.reply.replace(/^[^,]+,\s*/, '')}`, x.st, x.freq), 600); return; }
+    if (miss.length && !(S.cfg.diff <= 1 && !miss.includes('nominativo'))) { setTimeout(() => offAtc(`${O.AB}, ${O.negWord ? (/negativ/i.test(x.reply) ? 'ripeto:' : O.negWord) : 'negative, I say again:'} ${x.reply.replace(/^[^,]+,\s*/, '')}`, x.st, x.freq), 600); return; }
     O.rb = false; if (x.squawk) { S.assigned = x.squawk; renderRadio(); }
     if (x.ack) setTimeout(() => offAtc(x.ack, x.st, x.freq), 600);
     if (x.after) sys(x.after);
@@ -1160,44 +1160,67 @@ $('#preset-lucca').addEventListener('click', () => {
 
 // ---------- Microfono: tieni premuto per parlare ----------
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec = null, recOn = false, recFinal = '', recUsed = false;
+let rec = null, recOn = false, holding = false, segs = [], cur = '', baseTxt = '', micGen = 0;
+// Ogni sessione di riconoscimento ascolta UNA frase (continuous=false): su Chrome Android
+// la modalità continua ripete i pezzi già riconosciuti. Se tieni ancora premuto quando
+// il telefono chiude la frase, si riparte e si accoda il pezzo successivo.
+function renderMic() { $('#txt').value = [baseTxt].concat(segs, [cur]).filter(Boolean).join(' ').replace(/\s+/g, ' ').trim(); }
+function bestOf(result) {
+  let best = result[0];
+  for (let k = 1; k < result.length; k++) if ((result[k].confidence || 0) > (best.confidence || 0)) best = result[k];
+  return (best && best.transcript || '').trim();
+}
+function newRec(gen) {
+  const r = new SR();
+  r.lang = S.cfg.lang === 'it' ? 'it-IT' : 'en-GB';
+  r.continuous = false; r.interimResults = true; r.maxAlternatives = 1;
+  r.onresult = ev => {
+    if (gen !== micGen) return;
+    // ricostruisce sempre la frase dall'elenco completo, mai per somma di pezzi
+    const parts = [];
+    for (let i = 0; i < ev.results.length; i++) parts.push(bestOf(ev.results[i]));
+    let t = parts.filter(Boolean).join(' ');
+    // se Android rimanda un risultato che contiene già i precedenti, tieni il più lungo
+    const last = parts[parts.length - 1] || '';
+    if (parts.length > 1 && last.length >= t.length * 0.6 && parts.slice(0, -1).every(p => last.toLowerCase().includes(p.toLowerCase()))) t = last;
+    cur = t; renderMic();
+  };
+  r.onerror = ev => {
+    if (gen !== micGen) return;
+    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') { holding = false; sys('Microfono bloccato. Consenti il microfono per questa app: Impostazioni di Chrome → Impostazioni sito → Microfono.'); }
+    else if (ev.error === 'network') { holding = false; sys('Il riconoscimento vocale richiede la connessione a internet.'); }
+    else if (ev.error === 'language-not-supported') { holding = false; sys('Lingua non supportata dal riconoscimento vocale del telefono.'); }
+    else if (ev.error !== 'no-speech' && ev.error !== 'aborted') sys('Microfono: errore ' + ev.error + '.');
+  };
+  r.onend = () => {
+    if (gen !== micGen) return;
+    if (cur) { segs.push(cur); cur = ''; }
+    if (holding) { try { rec = newRec(gen); rec.start(); return; } catch {} }
+    micFinish();
+  };
+  return r;
+}
+function micFinish() {
+  recOn = false; holding = false; $('#mic').classList.remove('on'); $('#mic').textContent = 'PARLA';
+  renderMic();
+  const t = $('#txt').value.trim();
+  if (t && segs.length && S.cfg.aftermic !== 'edit') transmit();
+  else if (t) $('#txt').focus();
+}
 function micStart(e) {
   if (e) e.preventDefault();
   if (recOn || S.busy) return;
   if (!SR) { sys('Il riconoscimento vocale non è disponibile su questo browser. Usa Chrome su Android.'); return; }
-  initAudio(); stopSpeech(); revealAfter();
-  rec = new SR();
-  rec.lang = S.cfg.lang === 'it' ? 'it-IT' : 'en-GB';
-  rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
-  recFinal = ''; recUsed = true;
-  const base = $('#txt').value.trim();
-  rec.onresult = ev => {
-    let interim = '';
-    for (let i = ev.resultIndex; i < ev.results.length; i++) {
-      const r = ev.results[i];
-      if (r.isFinal) recFinal += r[0].transcript + ' '; else interim += r[0].transcript;
-    }
-    $('#txt').value = (base ? base + ' ' : '') + (recFinal + interim).trim();
-  };
-  rec.onerror = ev => {
-    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') sys('Microfono bloccato. Consenti il microfono per questa app: Impostazioni di Chrome → Impostazioni sito → Microfono.');
-    else if (ev.error === 'network') sys('Il riconoscimento vocale richiede la connessione a internet.');
-    else if (ev.error !== 'no-speech' && ev.error !== 'aborted') sys('Microfono: errore ' + ev.error + '.');
-  };
-  rec.onend = () => {
-    recOn = false; $('#mic').classList.remove('on'); $('#mic').textContent = 'PARLA';
-    const t = $('#txt').value.trim();
-    if (t && recUsed && S.cfg.aftermic !== 'edit') { recUsed = false; transmit(); }
-    else if (t) $('#txt').focus();
-  };
-  hardMute();
-  try { rec.start(); recOn = true; $('#mic').classList.add('on'); $('#mic').textContent = 'IN ONDA'; }
-  catch { recOn = false; }
+  initAudio(); stopSpeech(); revealAfter(); hardMute();
+  micGen++; holding = true; segs = []; cur = ''; baseTxt = $('#txt').value.trim();
+  try { rec = newRec(micGen); rec.start(); recOn = true; $('#mic').classList.add('on'); $('#mic').textContent = 'IN ONDA'; }
+  catch { recOn = false; holding = false; }
 }
 function micStop(e) {
   if (e) e.preventDefault();
-  if (!recOn || !rec) return;
-  setTimeout(() => { try { rec.stop(); } catch {} }, 350); // coda breve: non tagliare l'ultima parola
+  if (!recOn) return;
+  holding = false;
+  const r = rec; setTimeout(() => { try { r && r.stop(); } catch {} }, 400); // coda breve: non tagliare l'ultima parola
 }
 const mic = $('#mic');
 mic.addEventListener('pointerdown', micStart);
