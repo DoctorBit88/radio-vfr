@@ -164,11 +164,13 @@ details.carta[open] summary{margin-bottom:10px}
         <div class="field"><span class="label">Servizio</span>
           <div class="seg">
             <label><input type="radio" name="prov" value="openai" checked><span>OpenAI</span></label>
+            <label><input type="radio" name="prov" value="azure"><span>Azure OpenAI</span></label>
             <label><input type="radio" name="prov" value="anthropic"><span>Anthropic (Claude)</span></label>
           </div>
         </div>
-        <div class="field"><label class="label" for="apikey">Chiave API</label><input type="password" id="apikey" autocomplete="off" placeholder="sk-…"></div>
-        <div class="field"><label class="label" for="model">Modello</label><input type="text" id="model" autocomplete="off"></div>
+        <div class="field" id="azwrap" hidden><label class="label" for="azend">Endpoint Azure</label><input type="text" id="azend" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://nome-risorsa.openai.azure.com/"><span class="small">Lo trovi nel portale Azure, nella risorsa OpenAI, alla voce "Chiavi ed endpoint".</span></div>
+        <div class="field"><label class="label" for="apikey">Chiave API</label><input type="password" id="apikey" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="sk-…"></div>
+        <div class="field"><label class="label" for="model" id="modellbl">Modello</label><input type="text" id="model" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
         <div class="row"><button type="button" id="testapi">Prova collegamento</button><span class="small" id="apistatus"></span></div>
         <p class="small">La chiave resta salvata solo su questo telefono e viene inviata solo al servizio scelto. L'uso si paga a consumo sul tuo account del servizio.</p>
       </section>
@@ -433,8 +435,14 @@ const ATS = {
 };
 const PHASES = [['parking','Parcheggio'],['taxi','Rullaggio'],['departure','Partenza'],['enroute','In rotta'],['arrival','Arrivo'],['circuit','Circuito'],['landed','Atterrato'],['end','Fine']];
 const ERRS = {
+  noendpoint:'Inserisci l\'endpoint Azure completo, per esempio https://nome-risorsa.openai.azure.com/',
+  nodeploy:'Scrivi nel campo "Nome del deployment" il nome che hai dato al modello in Azure (portale Azure AI Foundry, sezione Deployment).',
+  aznet:'Il telefono non riesce a contattare Azure: controlla che l\'endpoint sia scritto giusto e che la risorsa non abbia l\'accesso di rete limitato.',
   nokey:'Inserisci la chiave API nella sezione Controllore, oppure usa la modalità offline.',
-  badkey:'Chiave API non valida, scaduta o senza credito.',
+  badkey:'Chiave rifiutata. Controlla di averla copiata intera da platform.openai.com, che appartenga al servizio scelto sopra e che non sia stata revocata.',
+  forbidden:'Accesso negato: la chiave non ha il permesso per questo modello o questa operazione. Su platform.openai.com, in API keys, imposta i permessi della chiave su "All", oppure prova un altro modello.',
+  quota:'La chiave è valida ma l\'account API non ha credito. L\'abbonamento ChatGPT non include l\'API: aggiungi credito su platform.openai.com, in Billing.',
+  nomodel:'Modello o deployment non trovato: controlla il nome nella sezione Controllore (su Azure è il nome del deployment, non quello del modello).',
   network:'Nessuna connessione con il servizio. Controlla la rete e riprova.',
   overloaded:'Il servizio è sovraccarico o non risponde. Riprova tra poco.',
   bad_request:'Richiesta rifiutata dal servizio: controlla il nome del modello.',
@@ -620,18 +628,29 @@ function testAudio() {
 // ---------- Stato ----------
 const S = { system: '', debrief: null, cfg: readCfg(), mode: 'ai', brief: null, turns: [], phase: 'parking', act: '', assigned: '7000', busy: false, ctl: null, lastAtc: null, offline: null, transcript: [] };
 // ---------- Controllore: OpenAI o Anthropic con la chiave dell'utente ----------
-const DEFAULT_MODEL = { openai: 'gpt-5-mini', anthropic: 'claude-haiku-5-5' };
+const _dm = 0;
+const DEFAULT_MODEL = { openai: 'gpt-5-mini', azure: '', anthropic: 'claude-haiku-5-5' };
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch {} }
 };
+function cleanKey(k) { return String(k || '').replace(/[\s\u200b-\u200d\u2060\ufeff"'`]/g, ''); }
 function prov() { return radioVal('prov') || 'openai'; }
+function syncProvUI() {
+  const az = prov() === 'azure';
+  $('#azwrap').hidden = !az;
+  $('#modellbl').textContent = az ? 'Nome del deployment' : 'Modello';
+  $('#model').placeholder = az ? 'es. gpt-4o-mini (il nome che hai dato al deployment)' : '';
+  $('#apikey').placeholder = az ? 'Chiave 1 o Chiave 2 della risorsa Azure' : (prov() === 'anthropic' ? 'sk-ant-…' : 'sk-…');
+}
 function updateMode() {
-  const m = $('#mode'), on = !!$('#apikey').value.trim();
-  m.textContent = on ? 'Controllore: ' + (prov() === 'openai' ? 'OpenAI' : 'Claude') : 'Controllore: offline';
+  const m = $('#mode'), on = !!cleanKey($('#apikey').value);
+  m.textContent = on ? 'Controllore: ' + ({ openai: 'OpenAI', azure: 'Azure OpenAI', anthropic: 'Claude' }[prov()]) : 'Controllore: offline';
+  syncProvUI();
   m.classList.toggle('on', on);
 }
 function loadProv() {
+  $('#azend').value = store.get('vfr-azend', '');
   setRadio('prov', store.get('vfr-prov', 'openai'));
   $('#apikey').value = store.get('vfr-key-' + prov(), '');
   $('#model').value = store.get('vfr-model-' + prov(), DEFAULT_MODEL[prov()]);
@@ -639,8 +658,9 @@ function loadProv() {
 }
 function saveProv() {
   store.set('vfr-prov', prov());
-  store.set('vfr-key-' + prov(), $('#apikey').value.trim());
+  store.set('vfr-key-' + prov(), cleanKey($('#apikey').value));
   store.set('vfr-model-' + prov(), $('#model').value.trim() || DEFAULT_MODEL[prov()]);
+  store.set('vfr-azend', $('#azend').value.trim());
   updateMode();
 }
 document.querySelectorAll('input[name=prov]').forEach(r => r.addEventListener('change', () => {
@@ -649,8 +669,9 @@ document.querySelectorAll('input[name=prov]').forEach(r => r.addEventListener('c
   $('#model').value = store.get('vfr-model-' + prov(), DEFAULT_MODEL[prov()]);
   updateMode();
 }));
-$('#apikey').addEventListener('change', saveProv);
+$('#apikey').addEventListener('change', () => { $('#apikey').value = cleanKey($('#apikey').value); saveProv(); });
 $('#model').addEventListener('change', saveProv);
+$('#azend').addEventListener('change', saveProv);
 $('#apikey').addEventListener('input', updateMode);
 
 function parseJSONLoose(t) {
@@ -662,7 +683,7 @@ function parseJSONLoose(t) {
   return null;
 }
 async function callLLM(system, messages, { maxTokens = 1500, signal } = {}) {
-  const p = prov(), key = $('#apikey').value.trim(), model = $('#model').value.trim() || DEFAULT_MODEL[p];
+  const p = prov(), key = cleanKey($('#apikey').value), model = $('#model').value.trim() || DEFAULT_MODEL[p];
   if (!key) throw { code: 'nokey' };
   const go = async (extra) => {
     let res;
@@ -673,6 +694,18 @@ async function callLLM(system, messages, { maxTokens = 1500, signal } = {}) {
           headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
           body: JSON.stringify({ model, max_tokens: maxTokens, system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }], messages })
         });
+      } else if (p === 'azure') {
+        let ep = $('#azend').value.trim().replace(/\/+$/, '');
+        if (!/^https:\/\//.test(ep)) throw { code: 'noendpoint' };
+        ep = ep.replace(/\/openai.*$/, '');
+        if (!model) throw { code: 'nodeploy' };
+        const body = Object.assign({ model, messages: [{ role: 'system', content: system }].concat(messages), response_format: { type: 'json_object' }, max_completion_tokens: Math.max(4000, maxTokens * 3) }, extra);
+        const hdr = { 'content-type': 'application/json', 'api-key': key };
+        res = await fetch(ep + '/openai/v1/chat/completions', { method: 'POST', signal, headers: hdr, body: JSON.stringify(body) });
+        if (res.status === 404) {
+          delete body.model;
+          res = await fetch(ep + '/openai/deployments/' + encodeURIComponent(model) + '/chat/completions?api-version=2024-10-21', { method: 'POST', signal, headers: hdr, body: JSON.stringify(body) });
+        }
       } else {
         const body = Object.assign({ model, messages: [{ role: 'system', content: system }].concat(messages), response_format: { type: 'json_object' }, max_completion_tokens: Math.max(4000, maxTokens * 3) }, extra);
         res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -681,12 +714,15 @@ async function callLLM(system, messages, { maxTokens = 1500, signal } = {}) {
           body: JSON.stringify(body)
         });
       }
-    } catch (e) { if (e && e.name === 'AbortError') throw { code: 'cancelled' }; throw { code: 'network' }; }
+    } catch (e) { if (e && e.code) throw e; if (e && e.name === 'AbortError') throw { code: 'cancelled' }; throw { code: p === 'azure' ? 'aznet' : 'network' }; }
     if (!res.ok) {
-      let detail = '';
-      try { const j = await res.json(); detail = (j.error && (j.error.message || j.error.type)) || ''; } catch {}
-      const code = res.status === 401 || res.status === 403 ? 'badkey' : res.status === 429 ? 'rate_limited' : (res.status === 400 || res.status === 404) ? 'bad_request' : 'overloaded';
-      throw { code, detail, status: res.status };
+      let detail = '', j0 = '';
+      try { const j = await res.json(); detail = (j.error && (j.error.message || j.error.type)) || ''; j0 = (j.error && (j.error.code || j.error.type)) || ''; } catch {}
+      const low = (detail + ' ' + ((typeof j0 !== 'undefined' && j0) || '')).toLowerCase();
+      const code = res.status === 401 ? 'badkey' : res.status === 403 ? 'forbidden'
+        : res.status === 429 ? (/quota|billing|credit/.test(low) ? 'quota' : 'rate_limited')
+        : res.status === 404 ? 'nomodel' : res.status === 400 ? 'bad_request' : 'overloaded';
+      throw { code, detail: (detail ? detail : '') + ' [HTTP ' + res.status + (j0 ? ' ' + j0 : '') + ']', status: res.status };
     }
     const data = await res.json();
     const text = p === 'anthropic'
@@ -696,9 +732,9 @@ async function callLLM(system, messages, { maxTokens = 1500, signal } = {}) {
     if (!obj || typeof obj !== 'object') throw { code: 'invalid_json' };
     return obj;
   };
-  if (p === 'openai' && /^(gpt-5|o\d)/.test(model)) {
+  if ((p === 'openai' || p === 'azure') && /^(gpt-5|o\d)/i.test(model)) {
     try { return await go({ reasoning_effort: 'low' }); }
-    catch (e) { if (e.code === 'bad_request' && /reasoning/i.test(e.detail || '')) return go({}); throw e; }
+    catch (e) { if (e.code === 'bad_request' && /reasoning|unrecognized|unsupported/i.test(e.detail || '')) return go({}); throw e; }
   }
   return go({});
 }
