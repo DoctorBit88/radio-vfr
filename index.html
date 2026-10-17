@@ -1,0 +1,1316 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0f12">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Radio VFR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+/* Layout: pila radio da cruscotto. Telefono: colonna unica con barra PTT fissa in basso. Desktop: radio+carta a sinistra, registro comunicazioni a destra. Tema unico scuro (cockpit notturno) per scelta. */
+:root{
+  color-scheme: dark;
+  --bg:#0b0f12; --panel:#131a1f; --panel2:#1a232a; --line:#27333b;
+  --fg:#dce5e2; --muted:#8a9b9a; --amber:#ffb340; --amber-dim:#4d3a1b;
+  --atc:#a4dccf; --ok:#5fc98c; --warn:#e9b44c; --bad:#ef6d60;
+  --f-disp:"Chakra Petch","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+  --f-mono:"Share Tech Mono",ui-monospace,Menlo,monospace;
+}
+html,body{background:var(--bg);color:var(--fg)}
+body{margin:0;font-family:var(--f-body);font-size:15px;line-height:1.5;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:calc(16px + env(safe-area-inset-top,0px)) 150px}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+h1,h2,h3{font-family:var(--f-disp);text-wrap:balance;margin:0;letter-spacing:.02em}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+header.top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:12px}
+header.top h1{font-size:1.6rem;font-weight:700;text-transform:uppercase}
+header.top h1 span{color:var(--amber)}
+.sub{color:var(--muted);font-size:.9rem;max-width:62ch}
+.mode{font-family:var(--f-mono);font-size:.8rem;padding:4px 10px;border:1px solid var(--line);border-radius:3px;color:var(--muted);white-space:nowrap}
+.mode.on{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,transparent)}
+.label{font-family:var(--f-disp);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+section.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:14px;min-width:0}
+section.card h2{font-size:1rem;text-transform:uppercase;color:var(--amber);font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:16px}
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+input[type=text],input[type=password],select,textarea{background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:9px 10px;font:inherit;width:100%;min-width:0}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg label{position:relative}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg span{display:inline-block;padding:7px 11px;border:1px solid var(--line);border-radius:4px;background:var(--panel2);cursor:pointer;font-size:.88rem}
+.seg input:checked+span{border-color:var(--amber);color:var(--amber);background:var(--amber-dim)}
+.seg input:focus-visible+span{outline:2px solid var(--amber)}
+.diff{display:flex;flex-direction:column;gap:6px}
+input[type=range]{width:100%;accent-color:var(--amber)}
+.diffnote{font-size:.85rem;color:var(--muted)}
+.diffnum{font-family:var(--f-mono);color:var(--amber);font-size:1.4rem}
+.checks{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:6px 16px}
+.checks label{display:flex;gap:8px;align-items:flex-start;font-size:.9rem;cursor:pointer}
+.checks input{accent-color:var(--amber);margin-top:4px}
+button{font:inherit;cursor:pointer;border-radius:4px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);padding:9px 14px}
+button:hover{border-color:var(--muted)}
+button:disabled{opacity:.45;cursor:default}
+button.primary{background:var(--amber);color:#1b1206;border-color:var(--amber);font-family:var(--f-disp);font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+button.ghost{background:transparent}
+.small{font-size:.82rem;color:var(--muted)}
+.note{font-size:.85rem;color:var(--muted);border-left:2px solid var(--line);padding-left:10px}
+.err{color:var(--bad);font-size:.9rem}
+
+/* Briefing */
+.freqs{width:100%;border-collapse:collapse;font-size:.92rem}
+.freqs td{padding:7px 6px;border-bottom:1px solid var(--line)}
+.freqs td.f{font-family:var(--f-mono);color:var(--amber);font-size:1.05rem;text-align:right;white-space:nowrap}
+.freqs td.b{width:1%;white-space:nowrap}
+.freqs button{padding:4px 8px;font-size:.78rem}
+.tablewrap{overflow-x:auto}
+
+/* Sessione */
+.session{display:grid;grid-template-columns:1fr;gap:16px}
+@media (min-width:900px){.session{grid-template-columns:380px 1fr;align-items:start}.side{position:sticky;top:16px}}
+.side{display:flex;flex-direction:column;gap:16px;min-width:0}
+.radio{background:#07090b;border:1px solid var(--line);border-radius:6px;padding:14px;display:flex;flex-direction:column;gap:12px}
+.radio .head{display:flex;justify-content:space-between;align-items:center}
+.radio .station{font-family:var(--f-disp);font-weight:600;color:var(--atc);font-size:.95rem}
+.lcd{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:end}
+.lcd .slot{display:flex;flex-direction:column;gap:2px;min-width:0}
+.lcd .act{font-family:var(--f-mono);font-size:2.1rem;color:var(--amber);line-height:1;text-shadow:0 0 12px color-mix(in srgb,var(--amber) 35%,transparent)}
+.lcd input{font-family:var(--f-mono);font-size:1.4rem;color:var(--amber);background:#0f1418;border-color:var(--amber-dim);padding:4px 6px;text-align:center}
+.swap{padding:8px 10px;font-family:var(--f-mono);font-size:1.1rem;align-self:end}
+.xpdr{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.xpdr input{width:5.2em;font-family:var(--f-mono);font-size:1.2rem;color:var(--amber);text-align:center;background:#0f1418;border-color:var(--amber-dim);padding:4px}
+.assigned{font-family:var(--f-mono);font-size:.85rem;color:var(--muted)}
+.assigned.mismatch{color:var(--warn)}
+.rail{display:flex;gap:4px;flex-wrap:wrap}
+.rail span{font-size:.7rem;font-family:var(--f-disp);letter-spacing:.08em;text-transform:uppercase;padding:3px 6px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
+.rail span.done{color:var(--fg);border-color:var(--muted)}
+.rail span.now{color:#1b1206;background:var(--amber);border-color:var(--amber)}
+.sit{background:var(--panel2);border-radius:4px;padding:10px 12px;font-size:.92rem}
+.hint{font-size:.88rem;color:var(--atc);border-left:2px solid var(--atc);padding-left:10px}
+.evchip{display:inline-block;font-family:var(--f-mono);font-size:.78rem;color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 50%,transparent);padding:2px 8px;border-radius:3px}
+details.carta summary{cursor:pointer;font-family:var(--f-disp);text-transform:uppercase;letter-spacing:.08em;font-size:.85rem;color:var(--amber)}
+details.carta[open] summary{margin-bottom:10px}
+
+.log{display:flex;flex-direction:column;gap:12px;min-width:0}
+.msg{border-radius:6px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;max-width:92%;min-width:0}
+.msg .meta{display:flex;gap:8px;align-items:center;font-size:.75rem;font-family:var(--f-mono);color:var(--muted);flex-wrap:wrap}
+.msg .txt{font-size:1rem;overflow-wrap:anywhere}
+.msg.atc{background:var(--panel);border:1px solid var(--line);align-self:flex-start}
+.msg.atc .who{color:var(--atc)}
+.msg.other{opacity:.72;border-style:dashed}
+.msg.atis{border-color:var(--amber-dim)}
+.msg.me{background:#1d2a24;border:1px solid #2d4238;align-self:flex-end}
+.msg.me .who{color:var(--ok)}
+.msg.sys{align-self:center;max-width:100%;font-size:.85rem;color:var(--muted);font-style:italic;text-align:center;padding:2px 8px}
+.hidden-txt .txt{filter:blur(6px);cursor:pointer;user-select:none}
+.garble{color:var(--muted);letter-spacing:-.1em}
+.play{padding:2px 8px;font-size:.75rem}
+.eval{border-top:1px solid var(--line);padding-top:6px;font-size:.88rem;display:flex;flex-direction:column;gap:4px}
+.eval ul{margin:0;padding-left:18px}
+.eval .correct{font-family:var(--f-mono);font-size:.88rem;color:var(--fg);background:var(--bg);padding:6px 8px;border-radius:3px;overflow-wrap:anywhere}
+.badge{font-family:var(--f-mono);font-size:.72rem;padding:1px 7px;border-radius:3px;border:1px solid}
+.badge.ok{color:var(--ok);border-color:var(--ok)}
+.badge.minor{color:var(--warn);border-color:var(--warn)}
+.badge.error{color:var(--bad);border-color:var(--bad)}
+.thinking{align-self:flex-start;font-family:var(--f-mono);font-size:.85rem;color:var(--muted)}
+.thinking::after{content:"▮";animation:blink 1s steps(1) infinite;margin-left:4px;color:var(--amber)}
+@keyframes blink{50%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.thinking::after{animation:none}}
+
+.ptt{position:fixed;left:0;right:0;bottom:0;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px);border-top:1px solid var(--line);padding:10px max(16px,env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));z-index:5}
+.ptt .in{max-width:1180px;margin:0 auto;display:flex;gap:8px;align-items:stretch;flex-wrap:wrap}
+.mic{flex:0 0 auto;min-width:92px;font-family:var(--f-disp);font-weight:700;letter-spacing:.08em;background:#1d2a24;border-color:#2d4238;color:var(--ok);touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.mic.on{background:var(--bad);border-color:var(--bad);color:#fff}
+.ptt textarea{flex:1 1 0;min-width:0;resize:none;height:52px;font-size:1rem}
+.ptt .btns{display:flex;gap:8px}
+.ptt .tx{min-width:64px}
+.ptt .in{flex-wrap:nowrap}
+.ptt .in>.tools{display:none}
+.ptt .tools2{max-width:1180px;margin:8px auto 0;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.ptt .tools2 button{padding:5px 10px;font-size:.8rem;white-space:nowrap;flex:0 0 auto}
+.ptt .tools{width:100%;display:flex;gap:6px;flex-wrap:wrap}
+.ptt .tools button{padding:5px 10px;font-size:.8rem}
+
+/* Debrief */
+.score{font-family:var(--f-mono);font-size:3rem;color:var(--amber);line-height:1}
+.pairs{display:flex;flex-direction:column;gap:8px}
+.pair{display:grid;grid-template-columns:1fr;gap:4px;background:var(--panel2);padding:8px 10px;border-radius:4px;font-family:var(--f-mono);font-size:.88rem;overflow-wrap:anywhere}
+.pair .w{color:var(--bad)} .pair .r{color:var(--ok)}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Simulatore <span>Radio</span> VFR</h1>
+      <p class="sub">Sessioni di volo complete per allenare la fraseologia PPL: tu sei il pilota, gli enti ATS rispondono e ogni trasmissione viene valutata.</p>
+    </div>
+    <div id="mode" class="mode">Controllore: collegamento…</div>
+  </header>
+
+  <!-- SETUP -->
+  <div id="v-setup" class="wrap" style="gap:16px">
+    <div class="grid">
+      <section class="card">
+        <h2>Controllore</h2>
+        <div class="field"><span class="label">Servizio</span>
+          <div class="seg">
+            <label><input type="radio" name="prov" value="openai" checked><span>OpenAI</span></label>
+            <label><input type="radio" name="prov" value="anthropic"><span>Anthropic (Claude)</span></label>
+          </div>
+        </div>
+        <div class="field"><label class="label" for="apikey">Chiave API</label><input type="password" id="apikey" autocomplete="off" placeholder="sk-…"></div>
+        <div class="field"><label class="label" for="model">Modello</label><input type="text" id="model" autocomplete="off"></div>
+        <div class="row"><button type="button" id="testapi">Prova collegamento</button><span class="small" id="apistatus"></span></div>
+        <p class="small">La chiave resta salvata solo su questo telefono e viene inviata solo al servizio scelto. L'uso si paga a consumo sul tuo account del servizio.</p>
+      </section>
+      <section class="card">
+        <h2>Programma dell'istruttore</h2>
+        <p class="small">Le comunicazioni da studiare. Il controllore costruisce gli scenari su questo testo e valuta secondo queste regole. Puoi modificarlo o incollarne un altro.</p>
+        <textarea id="program" rows="7" style="font-size:.85rem"></textarea>
+        <div class="row">
+          <button type="button" class="primary" id="preset-lucca">Preset: Lucca scuola (AFIS)</button>
+          <button type="button" class="ghost" id="program-reset">Ripristina testo istruttore</button>
+        </div>
+      </section>
+    </div>
+    <div class="grid">
+      <section class="card">
+        <h2>Aereo e volo</h2>
+        <div class="row" style="flex-wrap:nowrap">
+          <div class="field" style="flex:1"><label class="label" for="cs">Marche</label><input type="text" id="cs" value="I-ABCD" autocomplete="off"></div>
+          <div class="field" style="flex:1.4"><label class="label" for="ac">Aeromobile</label><input type="text" id="ac" value="Cessna 172" list="aclist"></div>
+        </div>
+        <datalist id="aclist"><option>Cessna 152</option><option>Cessna 172</option><option>Piper PA-28</option><option>Tecnam P2008</option><option>Tecnam P92</option><option>Robin DR400</option></datalist>
+        <div class="field"><label class="label" for="dep">Aeroporto di partenza</label><input type="text" id="dep" value="LIPU Padova" list="aplist"></div>
+        <datalist id="aplist"><option>LIQL Lucca Tassignano</option><option>LIMB Milano Bresso</option><option>LIMA Torino Aeritalia</option><option>LILE Biella Cerrione</option><option>LILH Voghera Rivanazzano</option><option>LILI Vercelli</option><option>LIMW Aosta</option><option>LIMG Albenga</option><option>LIQW Sarzana Luni</option><option>LIPN Verona Boscomantico</option><option>LIPV Venezia Lido</option><option>LIPF Ferrara</option><option>LIPM Modena Marzaglia</option><option>LIDE Reggio Emilia</option><option>LIDU Carpi Budrione</option><option>LIDP Pavullo nel Frignano</option><option>LIDG Lugo di Romagna</option><option>LIDR Ravenna</option><option>LIDF Fano</option><option>LIDT Trento Mattarello</option><option>LIDB Belluno</option><option>LIDA Asiago</option><option>LIPD Udine Campoformido</option><option>LIQB Arezzo</option><option>LIQS Siena Ampugnano</option><option>LIQN Rieti</option><option>LIAP L'Aquila Preturo</option><option>LIAU Capua</option><option>LIRJ Marina di Campo (Elba)</option><option>LIPU Padova</option><option>LIRU Roma Urbe</option><option>LILN Varese Venegono</option><option>LIRQ Firenze Peretola</option><option>LIPE Bologna</option><option>LIMF Torino Caselle</option><option>LIRA Roma Ciampino</option><option>LIPB Bolzano</option><option>Aeroporto fittizio</option></datalist>
+        <p class="small">Scrivi qualsiasi codice ICAO o nome di aeroporto o aviosuperficie: l'elenco è solo un aiuto.</p>
+        <div class="field"><span class="label">Servizio radio all'aeroporto</span>
+          <div class="seg">
+            <label><input type="radio" name="ats" value="auto" checked><span>Come nella realtà</span></label>
+            <label><input type="radio" name="ats" value="twr"><span>Torre (controllato)</span></label>
+            <label><input type="radio" name="ats" value="afis"><span>AFIS / “Radio”</span></label>
+            <label><input type="radio" name="ats" value="self"><span>Autoinformazione</span></label>
+          </div>
+        </div>
+        <div class="field"><span class="label">Tipo di volo</span>
+          <div class="seg" id="ftype">
+            <label><input type="radio" name="ftype" value="circuits"><span>Circuiti / touch &amp; go</span></label>
+            <label><input type="radio" name="ftype" value="local" checked><span>Volo locale con rientro</span></label>
+            <label><input type="radio" name="ftype" value="nav"><span>Navigazione A → B</span></label>
+          </div>
+        </div>
+        <div class="field" id="destwrap" hidden><label class="label" for="dest">Destinazione</label><input type="text" id="dest" value="LIPE Bologna" list="aplist"></div>
+      </section>
+
+      <section class="card">
+        <h2>Comunicazioni</h2>
+        <div class="field"><span class="label">Lingua radio</span>
+          <div class="seg">
+            <label><input type="radio" name="lang" value="en" checked><span>English (ICAO)</span></label>
+            <label><input type="radio" name="lang" value="it"><span>Italiano</span></label>
+          </div>
+        </div>
+        <div class="field"><span class="label">Traffico in frequenza</span>
+          <div class="seg">
+            <label><input type="radio" name="traffic" value="nessuno"><span>Nessuno</span></label>
+            <label><input type="radio" name="traffic" value="basso" checked><span>Basso</span></label>
+            <label><input type="radio" name="traffic" value="medio"><span>Medio</span></label>
+            <label><input type="radio" name="traffic" value="intenso"><span>Intenso</span></label>
+          </div>
+        </div>
+        <div class="field"><span class="label">Qualità radio</span>
+          <div class="seg">
+            <label><input type="radio" name="radio" value="pulita"><span>Pulita</span></label>
+            <label><input type="radio" name="radio" value="fruscio" checked><span>Fruscio</span></label>
+            <label><input type="radio" name="radio" value="disturbata"><span>Disturbata</span></label>
+          </div>
+        </div>
+        <div class="field"><span class="label">Dopo aver parlato</span>
+          <div class="seg">
+            <label><input type="radio" name="aftermic" value="send" checked><span>Trasmetti subito</span></label>
+            <label><input type="radio" name="aftermic" value="edit"><span>Fammi correggere il testo</span></label>
+          </div>
+        </div>
+        <div class="field"><span class="label">Testo del controllore</span>
+          <div class="seg">
+            <label><input type="radio" name="showatc" value="always" checked><span>Visibile</span></label>
+            <label><input type="radio" name="showatc" value="after"><span>Dopo la mia risposta</span></label>
+            <label><input type="radio" name="showatc" value="never"><span>Solo ascolto</span></label>
+          </div>
+        </div>
+        <div class="row">
+          <label class="checks" style="display:flex"><input type="checkbox" id="tts" checked><span>Voce del controllore</span></label>
+          <button type="button" class="testaudio">Prova audio</button>
+          <label class="small" for="rate">Velocità voce</label>
+          <input type="range" id="rate" min="0.7" max="1.4" step="0.05" value="1" style="width:120px">
+        </div>
+      </section>
+    </div>
+
+    <div class="grid">
+      <section class="card">
+        <h2>Difficoltà</h2>
+        <div class="diff">
+          <div class="row" style="justify-content:space-between"><span class="label">Livello</span><span class="diffnum" id="dval">3</span></div>
+          <input type="range" id="diff" min="1" max="5" step="1" value="3" aria-describedby="dnote">
+          <div class="diffnote" id="dnote"></div>
+        </div>
+        <div class="field"><span class="label">Feedback</span>
+          <div class="seg">
+            <label><input type="radio" name="feedback" value="immediate" checked><span>Dopo ogni trasmissione</span></label>
+            <label><input type="radio" name="feedback" value="debrief"><span>Solo al debriefing</span></label>
+          </div>
+        </div>
+        <div class="checks" style="grid-template-columns:1fr">
+          <label><input type="checkbox" id="hints" checked><span>Mostra cosa ci si aspetta da me (suggerimenti)</span></label>
+        </div>
+        </section>
+
+      <section class="card">
+        <h2>Imprevisti</h2>
+        <div class="checks" id="events"></div>
+        <div class="field"><span class="label">Frequenza degli imprevisti</span>
+          <div class="seg">
+            <label><input type="radio" name="evfreq" value="rari"><span>Rari</span></label>
+            <label><input type="radio" name="evfreq" value="occasionali" checked><span>Occasionali</span></label>
+            <label><input type="radio" name="evfreq" value="frequenti"><span>Frequenti</span></label>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="row">
+      <button class="primary" id="prep">Prepara il volo</button>
+      <button id="offline" class="ghost">Modalità offline (copione fisso)</button>
+      <span id="setuperr" class="err" role="alert"></span>
+    </div>
+    <p class="note">Microfono: durante la sessione tieni premuto PARLA, come il pulsante PTT sulla cloche. Al primo uso il telefono chiede il permesso del microfono.</p>
+    <section class="card" id="histcard" hidden>
+      <h2>Sessioni salvate</h2>
+      <div id="histlist" class="pairs"></div>
+      <div class="row"><button type="button" class="ghost" id="histclear">Cancella tutte</button><span class="small" id="histconfirm"></span></div>
+    </section>
+    <p class="note">Strumento di allenamento: frequenze, piste e punti di riporto sono generati e possono non corrispondere ad AIP e carte in vigore. Non usarlo per pianificare voli reali.</p>
+  </div>
+
+  <!-- BRIEFING -->
+  <div id="v-brief" hidden>
+    <section class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2 id="b-title">Briefing</h2>
+        <span class="small" id="b-sub"></span>
+      </div>
+      <div class="grid">
+        <div class="field">
+          <span class="label">Frequenze</span>
+          <div class="tablewrap"><table class="freqs" id="b-freqs"></table></div>
+        </div>
+        <div class="field">
+          <span class="label">Volo previsto</span>
+          <div id="b-route"></div>
+          <span class="label">Punti di riporto VFR</span>
+          <div id="b-vrps" class="small"></div>
+          <span class="label">Situazione iniziale</span>
+          <div id="b-sit" class="sit"></div>
+          <p class="note" id="b-disc"></p>
+        </div>
+      </div>
+      <div class="row">
+        <button class="primary" id="start">Inizia la sessione</button>
+        <button class="ghost" id="back">Modifica parametri</button>
+      </div>
+      <p class="small">L'ATIS non è nel briefing: sintonizza la sua frequenza sulla radio per ascoltarlo, come in volo.</p>
+    </section>
+  </div>
+
+  <!-- SESSIONE -->
+  <div id="v-session" hidden>
+    <div class="session">
+      <div class="side">
+        <div class="radio">
+          <div class="head"><span class="label">COM 1</span><span class="station" id="st-name">—</span></div>
+          <div class="lcd">
+            <div class="slot"><span class="label">Attiva</span><span class="act" id="f-act">---.---</span></div>
+            <button class="swap" id="swap" aria-label="Scambia frequenza attiva e standby">⇄</button>
+            <div class="slot"><label class="label" for="f-stby">Standby</label><input type="text" id="f-stby" inputmode="decimal" maxlength="7"></div>
+          </div>
+          <div class="xpdr">
+            <label class="label" for="sq">XPDR</label><input type="text" id="sq" inputmode="numeric" maxlength="4" value="7000">
+            <span class="assigned" id="sq-ass"></span>
+          </div>
+        </div>
+        <div class="rail" id="rail"></div>
+        <div class="sit" id="sit"></div>
+        <div class="hint" id="hint" hidden></div>
+        <div id="evbox" hidden><span class="evchip" id="evchip"></span></div>
+        <section class="card">
+          <details class="carta" open>
+            <summary>Frequenze e punti</summary>
+            <div class="tablewrap"><table class="freqs" id="s-freqs"></table></div>
+            <div class="small" id="s-vrps" style="margin-top:8px"></div>
+          </details>
+        </section>
+      </div>
+      <div class="log" id="log" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <!-- DEBRIEF -->
+  <div id="v-debrief" hidden>
+    <section class="card">
+      <h2>Debriefing</h2>
+      <div class="row" style="gap:20px;align-items:flex-end"><span class="score" id="d-score">—</span><span class="small">punteggio sessione su 100</span></div>
+      <p id="d-sum"></p>
+      <div class="grid">
+        <div class="field"><span class="label">Punti di forza</span><ul id="d-good"></ul></div>
+        <div class="field"><span class="label">Da migliorare</span><ul id="d-bad"></ul></div>
+      </div>
+      <div class="field"><span class="label">Fraseologia: detto → corretto</span><div class="pairs" id="d-pairs"></div></div>
+      <div class="row"><button class="primary" id="again">Nuova sessione</button><button class="ghost" id="tolog">Rivedi il registro</button><button class="ghost" id="savetx2">Salva trascrizione</button></div>
+    </section>
+  </div>
+</div>
+
+<div class="ptt" id="ptt" hidden>
+  <div class="in">
+    <button class="mic" id="mic" aria-label="Tieni premuto per parlare">PARLA</button>
+    <textarea id="txt" placeholder="Tieni premuto PARLA, oppure scrivi" aria-label="Trasmissione del pilota"></textarea>
+    <div class="btns">
+      <button class="primary tx" id="tx">TX</button>
+    </div>
+    
+  </div>
+  <div class="tools2">
+      <button id="adv" title="Il tempo scorre fino al prossimo punto significativo">Prosegui volo ⏵</button>
+      <button id="replay">Riascolta ultimo</button>
+      <button id="stop">Stop</button>
+      <button type="button" class="testaudio">Prova audio</button>
+      <button id="end">Termina e debriefing</button>
+      <button type="button" id="savetx">Salva trascrizione</button>
+    </div>
+</div>
+
+<script>
+(() => {
+const DEFAULT_PROGRAM = "AL PARCHEGGIO PRIMA DELLA MESSA IN MOTO AFIS LUCCA FRQ 122,505\nPilota: Lucca informazioni buon giorno I-CRRS.\nAFIS: I-RS lucca informazioni buongiorno avanti\nPilota: Lucca informazioni I-RS per la messa in moto\nAFIS: I-RS messa in moto a discrezione(Oppure: “Negativo per la messa in moto attività di lanci in corso”)\n(NB Si può usare il nominativo abbreviato -cioè la prima e le ultime due lettere -solo dopo che questo è stato usato dall AFIS: di Lucca per evitare di fare confusione con altro nominativo simile che fosse già in contatto con l’ AFIS ,per esempio I-CARS\nin questo caso si continua con il nominativo completo)\nPilota: Lucca informazioni I-RS ricevuto a discrezione la messa in moto( oppure :” ricevuto in attesa per la messa in moto”)\n N.B La richiesta per la messa in moto è necessaria durante la settimana quando possono esserci i lanci militari, attività non\ncompatibile con l attività di volo e quindi non è necessario chiedere la messa in moto nei giorni di sabato e domenica giorni\nin cui i militari non si lanciano.\n\fDOPO I CONTROLLI PRE AVVIAMENTO- DOPO L’AVVIAMENTO-E DOPO I CONTROLLI POST AVVIAMENTO E\nPRIMA DEL RULLAGGIO AL PUNTO ATTESA “A”\nPilota: Lucca informazioni I-RS al parcheggio informazioni per il rullaggio- Volo scuola, 2 persone a bordo ,6 ore di autonomia\n,zona di lavoro il padule.\nN.B nella prima parte si chiedono le informazioni per il rullaggio cioè pista in uso, QNH etc…-poi nella seconda perte si\ncomunica la “Notifica di Volo” che sostituisce il Piano di Volo ATC Specificando il numero delle persone a bordo -Autonomia\n-Zona di lavoro(Circuito ,Padule ,Verticale del campo Etc….)\nAFIS: I-RS a discrezione il rullaggio al punto attesa “A” la pista in uso è la 10(oppure 28) il QNH 1014 il vento da 090 ° 10 kts\n Nota : i dati del vento non vanno ripetuti dal pilota nel messaggio di ricezione a meno che non ci sia la raffica ..per esempio\nvento da 090° 10 nodi raffiche fino a 30 nodi ,mentre dobbiamo ripetere sempre il QNH e la pista in uso. Il QNH perché ci\ngarantisce la separazione verticale con gli altri traffici e con il terreno mentre la pista in uso per evitare di decollare\n”contromano” e con il vento in coda e ci permette di uniformarci al traffico a terra e in volo..\nPilota: I-RS ricevuto pista in uso 10, QNH 1014 ,riporterà al punto attesa “A”\nAL PUNTO ATTESA “A” DOPO LE PROVE MOTORE E I CONTROLLI PRE DECOLLO.\nPilota: Lucca informazioni I-RS al punto attesa “A” pronto allineamento e partenza 10( Oppure pronto al contropista 28)\n\fAFIS: I-RS allineamento e decollo 10 a discrezione (Oppure a discrezione il contropista 28) –\noppure :\n Allineamento e attesa 10\n,( nel caso di pista ancora occupata quando allineati si manterrà la posizione fino a quando non ci comunicano “decollo a\ndiscrezione”)\nPilota: Lucca informazioni I-RS ricevuto allineamento e decollo 10 a discrezione( oppure “allineamento e attesa”… o .contropista\n28)\nNote : Durante le comunicazioni a terra la parola DECOLLO si pronuncia solo dopo che l'ha pronunciata l operatore AFIS: ,fino a quel momento il pilota parla solo di PARTENZA poi quando l AFIS ci comunica “ A discrezione il DECOLLO” allora\nanche il pilota nel messaggio di ricezione parla di DECOLLO.\nALL'INIZIO DEL SOTTOVENTO PRIMA DEI CONTROLLI\nPilota: Lucca informazioni I-RS sottovento destro 10 (oppure sottovento sinistro 28)\nAFIS: I-RS Lucca informazioni ricevuto riportate in finale 10 ( oppure in base 10)\nIN FINALE\n\fPilota: Lucca informazioni I-RS in finale 10 (28)\nAFIS: I-RS l'atterraggio 10 a discrezione - vento da 090° 8 nodi\nPilota: Lucca informazioni I-RS ricevuto atterraggio 10 a discrezione (Non occorre ripetere il vento a meno che non ci sia la raffica)\nDOPO L ‘ATTERRAGGIO\nAFIS: I-RS contropista a discrezione fino al raccordo “A” (oppure via raccordo C e B)\nPilota: I-RS ricevuto a discrezione il contropista fino al raccordo “A”";
+const $ = s => document.querySelector(s);
+const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+
+const EVENTS = [
+  ['goaround','Riattaccata ordinata dalla torre', true],
+  ['rwychange','Cambio pista in uso', true],
+  ['hold','Attese: hold position, orbite, sottovento allungato', true],
+  ['trafficinfo','Informazioni di traffico, riporto “in vista”', true],
+  ['freqchange','Cambi di frequenza e squawk imprevisti', true],
+  ['blocked','Trasmissioni bloccate o sovrapposte', false],
+  ['sayagain','Messaggi da far ripetere (parti incomprensibili)', false],
+  ['weather','Peggioramento meteo, rientro o Special VFR', false],
+  ['atcerror','Errori del controllore da cogliere', false],
+  ['radiofail','Avaria radio (squawk 7600)', false],
+  ['emergency','Emergenze: PAN PAN / MAYDAY', false],
+];
+const DIFF = {
+  1:'Allievo: controllore lento e paziente, istruzioni singole, accetta piccole imprecisioni e ti guida.',
+  2:'Base: ritmo tranquillo, istruzioni semplici, correzioni gentili.',
+  3:'Standard: ritmo e fraseologia reali, readback completi richiesti.',
+  4:'Impegnativo: istruzioni composte, traffico che interferisce, poca tolleranza.',
+  5:'Esame: ritmo da aeroporto trafficato, istruzioni condizionali, nessuna tolleranza.'
+};
+const ATS = {
+  auto: "usa il servizio che l'aeroporto ha davvero: torre di controllo, servizio AFIS (nominativo \"… Radio\" o \"… Informazioni\") oppure nessun servizio ATS con autoinformazione in frequenza",
+  twr: 'tratta l\'aeroporto come controllato, con Ground e/o Torre che danno autorizzazioni',
+  afis: 'tratta l\'aeroporto come servizio AFIS: l\'operatore (\"… Radio\") fornisce informazioni su pista in uso, vento, QNH e traffico ma NON dà autorizzazioni; il pilota comunica le proprie intenzioni ("entro in pista", "decollo", "sottovento") e la fraseologia deve rispecchiarlo',
+  self: 'tratta l\'aeroporto come non controllato e senza servizio ATS: non c\'è nessun ente in frequenza, il pilota fa riporti in cieco a beneficio del traffico (es. \"Traffico di Tassignano, I-ABCD, …\"); rispondono solo altri aeromobili, se presenti; valuta la completezza dei riporti (posizione, pista, intenzioni, ripetizione del nome del campo a fine messaggio)'
+};
+const PHASES = [['parking','Parcheggio'],['taxi','Rullaggio'],['departure','Partenza'],['enroute','In rotta'],['arrival','Arrivo'],['circuit','Circuito'],['landed','Atterrato'],['end','Fine']];
+const ERRS = {
+  nokey:'Inserisci la chiave API nella sezione Controllore, oppure usa la modalità offline.',
+  badkey:'Chiave API non valida, scaduta o senza credito.',
+  network:'Nessuna connessione con il servizio. Controlla la rete e riprova.',
+  overloaded:'Il servizio è sovraccarico o non risponde. Riprova tra poco.',
+  bad_request:'Richiesta rifiutata dal servizio: controlla il nome del modello.',
+  not_granted:'Non hai autorizzato la pagina a usare Claude. Puoi usare la modalità offline.',
+  sampling_disabled:'Claude non è disponibile per questo account. Usa la modalità offline.',
+  rate_limited:'Troppe richieste in poco tempo o limite di utilizzo raggiunto. Riprova tra poco.',
+  session_expired:'Sessione scaduta: accedi di nuovo a Claude e ricarica la pagina.',
+  invalid_json:'Il controllore ha risposto in un formato non leggibile. Ritrasmetti.',
+  refused:'Richiesta rifiutata. Riformula la trasmissione.',
+  prompt_too_large:'Sessione troppo lunga. Termina e fai il debriefing.',
+};
+
+// ---------- Config ----------
+const evBox = $('#events');
+for (const [k, label, def] of EVENTS) {
+  const l = el('label'); const i = el('input'); i.type = 'checkbox'; i.id = 'ev-' + k; i.checked = def;
+  l.append(i, el('span', null, label)); evBox.append(l);
+}
+const radioVal = n => (document.querySelector(`input[name="${n}"]:checked`) || {}).value;
+const setRadio = (n, v) => { const r = document.querySelector(`input[name="${n}"][value="${v}"]`); if (r) r.checked = true; };
+function readCfg() {
+  const ev = {}; for (const [k] of EVENTS) ev[k] = $('#ev-' + k).checked;
+  return {
+    cs: $('#cs').value.trim().toUpperCase() || 'I-ABCD', ac: $('#ac').value.trim() || 'Cessna 172',
+    dep: $('#dep').value.trim() || 'Aeroporto fittizio', dest: $('#dest').value.trim(),
+    ftype: radioVal('ftype'), lang: radioVal('lang'), traffic: radioVal('traffic'), radio: radioVal('radio'),
+    showatc: radioVal('showatc'), ats: radioVal('ats') || 'auto', aftermic: radioVal('aftermic') || 'send', program: $('#program').value.trim(), tts: $('#tts').checked, rate: +$('#rate').value, diff: +$('#diff').value,
+    feedback: radioVal('feedback'), hints: $('#hints').checked, model: radioVal('model'), evfreq: radioVal('evfreq'), ev
+  };
+}
+function readCfgSafe() { try { return readCfg(); } catch { return {}; } }
+function applyCfg(c) {
+  if (!c) return;
+  for (const k of ['cs','ac','dep','dest']) if (c[k]) $('#' + k).value = c[k];
+  for (const k of ['ftype','lang','traffic','radio','showatc','feedback','model','evfreq','ats','aftermic']) if (c[k]) setRadio(k, c[k]);
+  if (typeof c.tts === 'boolean') $('#tts').checked = c.tts;
+  if (typeof c.hints === 'boolean') $('#hints').checked = c.hints;
+  if (c.rate) $('#rate').value = c.rate; if (c.diff) $('#diff').value = c.diff;
+  if (c.ev) for (const [k] of EVENTS) if (k in c.ev) $('#ev-' + k).checked = c.ev[k];
+}
+try { applyCfg(JSON.parse(localStorage.getItem('vfr-radio-cfg') || 'null')); } catch {}
+const syncDiff = () => { $('#dval').textContent = $('#diff').value; $('#dnote').textContent = DIFF[$('#diff').value]; };
+const syncDest = () => { $('#destwrap').hidden = radioVal('ftype') !== 'nav'; };
+$('#diff').addEventListener('input', syncDiff); syncDiff();
+document.querySelectorAll('input[name=ftype]').forEach(r => r.addEventListener('change', syncDest)); syncDest();
+
+// ---------- Callsign helpers ----------
+const PHON = {a:'Alfa',b:'Bravo',c:'Charlie',d:'Delta',e:'Echo',f:'Foxtrot',g:'Golf',h:'Hotel',i:'India',j:'Juliett',k:'Kilo',l:'Lima',m:'Mike',n:'November',o:'Oscar',p:'Papa',q:'Quebec',r:'Romeo',s:'Sierra',t:'Tango',u:'Uniform',v:'Victor',w:'Whiskey',x:'X-ray',y:'Yankee',z:'Zulu'};
+const W2L = {}; for (const [l, w] of Object.entries(PHON)) W2L[w.toLowerCase().replace('-', '')] = l;
+Object.assign(W2L, {alpha:'a', juliet:'j', whisky:'w', xray:'x'});
+const W2D = {zero:'0',one:'1',wun:'1',uno:'1',two:'2',too:'2',due:'2',three:'3',tree:'3',tre:'3',four:'4',fower:'4',quattro:'4',five:'5',fife:'5',cinque:'5',six:'6',sei:'6',seven:'7',sette:'7',eight:'8',ait:'8',otto:'8',nine:'9',niner:'9',nove:'9',decimal:'.',decimale:'.',point:'.',virgola:'.'};
+const csLetters = cs => cs.toLowerCase().replace(/[^a-z0-9]/g, '');
+const csPhon = cs => csLetters(cs).split('').map(c => PHON[c] || c).join(' ');
+const csAbbr = cs => { const l = csLetters(cs); return l.length > 3 ? l[0] + l.slice(-2) : l; };
+function norm(s) {
+  let t = s.toLowerCase().replace(/[-_]/g, '').replace(/[^a-z0-9.àèéìòù ]/g, ' ');
+  const toks = t.split(/\s+/).filter(Boolean).map(w => W2L[w] || W2D[w] || w);
+  const text = ' ' + toks.join(' ') + ' ';
+  return { text, toks: new Set(toks), compact: toks.join(''), digits: toks.join('').replace(/[^0-9]/g, '') };
+}
+
+// ---------- Audio: voce radio integrata (meSpeak) o voce del dispositivo, con fruscio ----------
+let actx = null, noiseGain = null, radioIn = null;
+let ttsState = 'error'; // voce del dispositivo
+
+function audioStatus() {
+  const t = { loading: 'Voce radio: caricamento…', ready: 'Voce radio pronta', error: 'Voce radio non caricata: uso la voce del dispositivo' }[ttsState];
+  document.querySelectorAll('.astatus').forEach(e => { e.textContent = t; });
+}
+function initAudio() {
+  try {
+    if (!actx) {
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      // catena radio: banda telefonica + leggera saturazione
+      const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 350;
+      const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3000;
+      const sh = actx.createWaveShaper(); const curve = new Float32Array(1024);
+      for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; curve[i] = Math.tanh(x * 2.2) / Math.tanh(2.2); }
+      sh.curve = curve;
+      const out = actx.createGain(); out.gain.value = 1.15;
+      hp.connect(lp).connect(sh).connect(out).connect(actx.destination); radioIn = hp;
+      const buf = actx.createBuffer(1, actx.sampleRate * 2, actx.sampleRate);
+      const d = buf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const src = actx.createBufferSource(); src.buffer = buf; src.loop = true;
+      const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1700; bp.Q.value = 0.6;
+      noiseGain = actx.createGain(); noiseGain.gain.value = 0;
+      src.connect(bp).connect(noiseGain).connect(actx.destination); src.start();
+      // sblocco iOS: un buffer muto riprodotto dentro il tocco
+      const s = actx.createBufferSource(); s.buffer = actx.createBuffer(1, 1, 22050); s.connect(actx.destination); s.start(0);
+    }
+    if (actx.state !== 'running') actx.resume();
+  } catch { actx = null; }
+  // sblocco voce del dispositivo (deve partire dentro un tocco)
+  try { if (!initAudio.ss && 'speechSynthesis' in window) { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); initAudio.ss = true; } } catch {}
+}
+document.addEventListener('pointerdown', initAudio, { capture: true });
+document.addEventListener('keydown', initAudio, { capture: true });
+const NOISE = { pulita: 0.006, fruscio: 0.035, disturbata: 0.08 };
+function noise(on) {
+  if (!actx || !noiseGain) return;
+  noiseGain.gain.setTargetAtTime(on ? (NOISE[S.cfg.radio] || 0.03) : 0, actx.currentTime, 0.03);
+}
+function click() {
+  if (!actx) return;
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = 'square'; o.frequency.value = 2400; g.gain.value = 0.04;
+  o.connect(g).connect(actx.destination); o.start(); o.stop(actx.currentTime + 0.035);
+}
+function spoken(text, lang) {
+  const D = lang === 'it' ? ['zero','uno','due','tre','quattro','cinque','sei','sette','otto','nove'] : ['zero','one','two','three','four','five','six','seven','eight','niner'];
+  const dec = lang === 'it' ? ' decimale ' : ' decimal ';
+  let t = text.replace(/\[\s*(?:\.\.\.|…)\s*\]/g, ' , , , ');
+  t = t.replace(/\b([A-Z])-([A-Z]{2,4})\b/g, (m, a, b) => (a + b).toLowerCase().split('').map(c => PHON[c]).join(' '));
+  t = t.replace(/(\d+)\s*(feet|ft|piedi)/gi, (m, n) => n + ' ' + (lang === 'it' ? 'piedi' : 'feet') + '​');
+  t = t.replace(/(\d+)\.(\d+)/g, (m, a, b) => a.split('').map(x => D[x]).join(' ') + dec + b.split('').map(x => D[x]).join(' '));
+  t = t.replace(/\b\d+\b(?!\s*(?:piedi|feet)​)/g, m => m.split('').map(x => D[x]).join(' '));
+  t = t.replace(/​/g, '');
+  if (lang === 'en') t = t.replace(/\bQNH\b/g, 'Q N H').replace(/\bVFR\b/g, 'V F R').replace(/\bATIS\b/g, 'ay tis');
+  else t = t.replace(/\bQNH\b/g, 'cu enne acca').replace(/\bVFR\b/g, 'vu effe erre');
+  return t;
+}
+let voices = [];
+const loadVoices = () => { try { voices = speechSynthesis.getVoices(); } catch {} };
+if ('speechSynthesis' in window) { loadVoices(); try { speechSynthesis.onvoiceschanged = loadVoices; } catch {} }
+function pickVoice(lang, idx) {
+  const list = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith(lang === 'it' ? 'it' : 'en'));
+  return list.length ? list[idx % list.length] : null;
+}
+const speakQ = []; let speaking = false, curSrc = null, speakToken = 0;
+function stationIdx(name) { let h = 0; for (const c of name || '') h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; }
+function say(text, station, isOther) {
+  if (!S.cfg.tts) return;
+  speakQ.push({ text, station, isOther }); if (!speaking) nextSpeak();
+}
+function useRadioVoice() { return S.cfg.voice !== 'device' && ttsState === 'ready' && actx; }
+function nextSpeak() {
+  const it = speakQ.shift();
+  if (!it) { speaking = false; noise(false); return; }
+  speaking = true; const tok = ++speakToken;
+  const done = () => { if (tok !== speakToken) return; click(); setTimeout(() => { if (tok === speakToken) nextSpeak(); }, 400); };
+  const text = spoken(it.text, S.cfg.lang); const h = stationIdx(it.station);
+  click(); noise(true);
+  if (useRadioVoice()) {
+    try {
+      const plain = text.normalize('NFD').replace(/[̀-ͯ]/g, '');
+      const buf = window.meSpeak.speak(plain, { voice: S.cfg.lang === 'it' ? 'it' : 'en/en', rawdata: 'buffer',
+        speed: Math.round((135 + S.cfg.diff * 14) * S.cfg.rate), pitch: 30 + (h % 5) * 9, amplitude: it.isOther ? 70 : 100, wordgap: 0 });
+      if (!buf) throw new Error('no audio');
+      actx.decodeAudioData(buf.slice(0), ab => {
+        if (tok !== speakToken) return;
+        const src = actx.createBufferSource(); src.buffer = ab; src.connect(radioIn); curSrc = src;
+        src.onended = () => { curSrc = null; done(); }; src.start();
+      }, () => done());
+      return;
+    } catch { /* passa alla voce del dispositivo */ }
+  }
+  if (!('speechSynthesis' in window)) { done(); return; }
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = S.cfg.lang === 'it' ? 'it-IT' : 'en-GB';
+    const v = pickVoice(S.cfg.lang, h); if (v) u.voice = v;
+    u.rate = Math.min(2, (0.88 + S.cfg.diff * 0.09) * S.cfg.rate);
+    u.pitch = 0.85 + (h % 5) * 0.08; u.volume = it.isOther ? 0.7 : 1;
+    u.onend = u.onerror = done;
+    speechSynthesis.speak(u);
+    setTimeout(() => { try { if (tok === speakToken && !speechSynthesis.speaking && !speechSynthesis.pending) done(); } catch {} }, 4000);
+  } catch { done(); }
+}
+function stopSpeech() {
+  speakToken++; speakQ.length = 0;
+  try { curSrc && curSrc.stop(); } catch {} curSrc = null;
+  try { speechSynthesis.cancel(); } catch {}
+  speaking = false; noise(false);
+}
+function testAudio() {
+  initAudio(); stopSpeech();
+  const prev = S.cfg; S.cfg = Object.assign({}, prev, readCfgSafe(), { tts: true });
+  const t = S.cfg.lang === 'it' ? 'Prova radio. India Bravo Charlie Delta, vi ricevo forte e chiaro.' : 'Radio check. India Alpha Bravo Charlie Delta, reading you five.';
+  say(t, 'Test', false);
+  setTimeout(() => { if (!document.getElementById('v-session').hidden) S.cfg = prev; else S.cfg = Object.assign({}, prev, readCfgSafe()); }, 50);
+}
+
+// ---------- Stato ----------
+const S = { system: '', debrief: null, cfg: readCfg(), mode: 'ai', brief: null, turns: [], phase: 'parking', act: '', assigned: '7000', busy: false, ctl: null, lastAtc: null, offline: null, transcript: [] };
+// ---------- Controllore: OpenAI o Anthropic con la chiave dell'utente ----------
+const DEFAULT_MODEL = { openai: 'gpt-5-mini', anthropic: 'claude-haiku-5-5' };
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} }
+};
+function prov() { return radioVal('prov') || 'openai'; }
+function updateMode() {
+  const m = $('#mode'), on = !!$('#apikey').value.trim();
+  m.textContent = on ? 'Controllore: ' + (prov() === 'openai' ? 'OpenAI' : 'Claude') : 'Controllore: offline';
+  m.classList.toggle('on', on);
+}
+function loadProv() {
+  setRadio('prov', store.get('vfr-prov', 'openai'));
+  $('#apikey').value = store.get('vfr-key-' + prov(), '');
+  $('#model').value = store.get('vfr-model-' + prov(), DEFAULT_MODEL[prov()]);
+  updateMode();
+}
+function saveProv() {
+  store.set('vfr-prov', prov());
+  store.set('vfr-key-' + prov(), $('#apikey').value.trim());
+  store.set('vfr-model-' + prov(), $('#model').value.trim() || DEFAULT_MODEL[prov()]);
+  updateMode();
+}
+document.querySelectorAll('input[name=prov]').forEach(r => r.addEventListener('change', () => {
+  store.set('vfr-prov', prov());
+  $('#apikey').value = store.get('vfr-key-' + prov(), '');
+  $('#model').value = store.get('vfr-model-' + prov(), DEFAULT_MODEL[prov()]);
+  updateMode();
+}));
+$('#apikey').addEventListener('change', saveProv);
+$('#model').addEventListener('change', saveProv);
+$('#apikey').addEventListener('input', updateMode);
+
+function parseJSONLoose(t) {
+  if (!t) return null; t = String(t).trim();
+  try { return JSON.parse(t); } catch {}
+  const f = t.match(/```(?:json)?\s*([\s\S]*?)```/); if (f) { try { return JSON.parse(f[1]); } catch {} }
+  const i = t.indexOf('{'), j = t.lastIndexOf('}');
+  if (i >= 0 && j > i) { try { return JSON.parse(t.slice(i, j + 1)); } catch {} }
+  return null;
+}
+async function callLLM(system, messages, { maxTokens = 1500, signal } = {}) {
+  const p = prov(), key = $('#apikey').value.trim(), model = $('#model').value.trim() || DEFAULT_MODEL[p];
+  if (!key) throw { code: 'nokey' };
+  const go = async (extra) => {
+    let res;
+    try {
+      if (p === 'anthropic') {
+        res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST', signal,
+          headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+          body: JSON.stringify({ model, max_tokens: maxTokens, system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }], messages })
+        });
+      } else {
+        const body = Object.assign({ model, messages: [{ role: 'system', content: system }].concat(messages), response_format: { type: 'json_object' }, max_completion_tokens: Math.max(4000, maxTokens * 3) }, extra);
+        res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST', signal,
+          headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + key },
+          body: JSON.stringify(body)
+        });
+      }
+    } catch (e) { if (e && e.name === 'AbortError') throw { code: 'cancelled' }; throw { code: 'network' }; }
+    if (!res.ok) {
+      let detail = '';
+      try { const j = await res.json(); detail = (j.error && (j.error.message || j.error.type)) || ''; } catch {}
+      const code = res.status === 401 || res.status === 403 ? 'badkey' : res.status === 429 ? 'rate_limited' : (res.status === 400 || res.status === 404) ? 'bad_request' : 'overloaded';
+      throw { code, detail, status: res.status };
+    }
+    const data = await res.json();
+    const text = p === 'anthropic'
+      ? (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('')
+      : (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+    const obj = parseJSONLoose(text);
+    if (!obj || typeof obj !== 'object') throw { code: 'invalid_json' };
+    return obj;
+  };
+  if (p === 'openai' && /^(gpt-5|o\d)/.test(model)) {
+    try { return await go({ reasoning_effort: 'low' }); }
+    catch (e) { if (e.code === 'bad_request' && /reasoning/i.test(e.detail || '')) return go({}); throw e; }
+  }
+  return go({});
+}
+$('#testapi').addEventListener('click', async () => {
+  saveProv(); const st = $('#apistatus'); st.style.color = ''; st.textContent = 'Provo…';
+  try {
+    await callLLM('Rispondi solo con JSON.', [{ role: 'user', content: 'Rispondi con il JSON {"ok":true}' }], { maxTokens: 50 });
+    st.textContent = 'Collegamento riuscito.'; st.style.color = 'var(--ok)';
+  } catch (e) { st.textContent = errText(e); st.style.color = 'var(--bad)'; }
+});
+loadProv();
+
+
+const show = id => { for (const v of ['setup','brief','session','debrief']) $('#v-' + v).hidden = v !== id; $('#ptt').hidden = id !== 'session'; };
+
+// ---------- Prompt ----------
+function rules(c) {
+  const ftype = { circuits: 'circuiti di traffico con touch and go e atterraggio finale', local: 'volo locale: partenza, uscita dalla zona di controllo da un punto di riporto VFR, lavoro in area con contatto FIS, rientro e atterraggio', nav: 'navigazione VFR verso ' + (c.dest || 'un aeroporto vicino') + ', con uscita dalla zona, contatto FIS in rotta e ingresso nella zona di destinazione fino al parcheggio' }[c.ftype];
+  const evs = EVENTS.filter(([k]) => c.ev[k]).map(([, l]) => l).join('; ');
+  return `Sei il motore di un simulatore di comunicazioni radio aeronautiche per l'addestramento di piloti PPL(A) in volo VFR in Italia. Interpreti in modo realistico TUTTI gli enti ATS coinvolti (ATIS, Ground/Delivery, Torre, AFIS "Radio", Avvicinamento, FIS "Information"/"Informazioni"), anche negli aeroporti minori e nelle aviosuperfici e, quando utile al realismo, altri aeromobili sulla stessa frequenza. L'utente è il pilota.
+
+CONFIGURAZIONE
+- Nominativo del pilota: ${c.cs} (fonetico: ${csPhon(c.cs)}). Abbreviato: ${csAbbr(c.cs).toUpperCase()} — l'ente lo abbrevia solo dopo un contatto soddisfacente, il pilota solo dopo che l'ente lo ha fatto.
+- Aeromobile: ${c.ac}
+- Aeroporto di partenza: ${c.dep}
+- Servizio radio all'aeroporto: ${ATS[c.ats || 'auto']}. Lo stesso criterio vale per la destinazione.
+- Volo: ${ftype}
+- Lingua radio: ${c.lang === 'en' ? 'inglese, fraseologia ICAO (Doc 4444, Doc 9432) e prassi ENAV' : 'italiano, fraseologia ENAV per voli VFR in lingua italiana'}. I campi eval, situation e hint sono SEMPRE in italiano.
+- Difficoltà ${c.diff}/5: ${DIFF[c.diff]}
+- Traffico in frequenza: ${c.traffic}
+- Qualità radio: ${c.radio}
+- Imprevisti abilitati: ${evs || 'nessuno'}. Frequenza imprevisti: ${c.evfreq}. Non introdurre imprevisti non abilitati.
+- Suggerimenti al pilota: ${c.hints ? 'sì, compila hint con cosa ci si aspetta ora (senza dettare la frase esatta se difficoltà ≥4)' : 'no, hint sempre stringa vuota'}
+
+${c.program ? "PROGRAMMA DELL'ISTRUTTORE\nIl pilota sta studiando queste comunicazioni indicate dal suo istruttore. Quando la sessione riguarda quell'aeroporto o quel tipo di volo segui esattamente questa fraseologia, queste regole e queste frequenze, e valuta il pilota secondo questo standard, che prevale sulle regole generali. Negli altri casi usalo come guida di stile.\n<<<\n" + c.program.slice(0, 12000) + "\n>>>\n\n" : ''}TRASCRIZIONE
+Le trasmissioni del pilota arrivano spesso dal riconoscimento vocale del telefono: ignora errori di trascrizione evidenti (numeri in cifre, lettere fonetiche trascritte male o come singole lettere, punteggiatura, maiuscole) e valuta ciò che il pilota ha detto.
+
+REALISMO
+- Usa dati aeroportuali il più possibile fedeli alla realtà (piste, punti di riporto VFR, frequenze, enti), restando coerente con il briefing per tutta la sessione.
+- Un ente risponde solo se il pilota trasmette sulla frequenza di quell'ente. Su una frequenza sbagliata nessuno risponde (atc vuoto); segnalalo solo in eval.
+- Se il readback è incompleto o errato il controllore reagisce come nella realtà ("negative…", "read back…", "say again"). Se il pilota chiede di ripetere, ripeti.
+- Ritmo, lunghezza e complessità delle istruzioni seguono la difficoltà. Con traffico medio o intenso inserisci ogni tanto trasmissioni di altri aeromobili e del controllore verso di loro (to_me:false), anche prima della risposta al pilota.
+- Con qualità radio "disturbata" e se l'imprevisto relativo è abilitato, sostituisci a volte 1-3 parole di un messaggio diretto al pilota con "[...]": il pilota dovrebbe chiedere di ripetere.
+- Distribuisci gli imprevisti nei momenti credibili del volo, uno alla volta, e gestiscine le conseguenze correttamente.
+- Il tempo avanza solo quando il pilota trasmette o invia AVANZA. Con AVANZA porta il volo al prossimo punto significativo (punto attesa raggiunto, sul punto di riporto, in sottovento, in finale…), descrivilo in situation e, se realistico, fai chiamare il pilota dall'ente. Se il pilota doveva trasmettere qualcosa prima (es. riporto richiesto), fallo notare in hint e, se realistico, l'ente lo chiama.
+- Ogni messaggio include lo squawk impostato dal pilota: se diverso da quello assegnato, l'ente può segnalarlo.
+- Scrivi i nominativi come marche (es. ${c.cs}) e le frequenze con 3 decimali.
+
+VALUTAZIONE (eval, solo se il pilota ha trasmesso)
+Controlla: nominativo (presenza, posizione, abbreviazione lecita), struttura della chiamata iniziale (ente, nominativo, posizione, richiesta), readback obbligatori (piste, autorizzazioni di decollo/atterraggio/attraversamento, holding point, QNH, squawk, frequenze, quote e restrizioni, istruzioni condizionali), parole standard (ROGER, WILCO, AFFIRM, NEGATIVE, STANDBY), sintesi, coerenza con la situazione. Severità in base alla difficoltà.
+rating: "ok" | "minor" | "error". issues: elenco breve. correct: la trasmissione ideale nella lingua radio.
+
+FORMATO DI OGNI RISPOSTA (solo JSON, nient'altro)
+{"atc":[{"station":"nome ente o nominativo dell'altro aeromobile","freq":"118.705","text":"testo trasmesso","to_me":true}],"eval":{"rating":"ok","issues":[],"correct":"..."},"situation":"dove si trova ora il pilota e cosa sta succedendo","phase":"parking|taxi|departure|enroute|arrival|circuit|landed|end","squawk":"squawk assegnato attuale","event":null,"hint":"","done":false}
+eval è null se il pilota non ha trasmesso. event: breve nome dell'imprevisto appena iniziato, altrimenti null. done: true solo a volo concluso (motore spento al parcheggio o fine esercizio).`;
+}
+const BRIEF_REQ = `Genera ora il BRIEFING di inizio sessione. Rispondi solo con questo JSON:
+{"airport":{"icao":"","name":"","elevation_ft":0},"runway":"pista in uso","atis_letter":"","atis":"testo completo dell'ATIS nella lingua radio (vento, visibilità, nubi, temperatura, QNH, pista)","stations":[{"name":"es. Padova Torre","type":"atis|delivery|ground|tower|afis|traffic|approach|info","freq":"118.705"}],"vrps":["nomi dei punti di riporto VFR utili"],"route":"descrizione del volo previsto e delle procedure di uscita/rientro, in italiano","situation":"dove si trova il pilota e cosa deve fare per primo, in italiano","first_freq":"frequenza del primo ente da chiamare","squawk":"7000","qnh":"1013","disclaimer":"nota breve sull'affidabilità dei dati"}
+Includi tutte le frequenze utili all'intero volo (anche destinazione e FIS). Per un campo senza servizio ATS usa una stazione di tipo traffic (es. \"Traffico Tassignano\") con la frequenza di autoinformazione. Se il campo non ha ATIS, non inventarlo: metti le informazioni meteo in atis come bollettino letto dall'operatore AFIS o lascialo vuoto. Il pilota parte con la radio accesa su una frequenza qualsiasi: dovrà sintonizzarsi da solo.`;
+
+function trimmed() {
+  const head = S.turns.slice(0, 2); let tail = S.turns.slice(2);
+  if (tail.length > 30) { tail = tail.slice(-30); while (tail.length && tail[0].role !== 'user') tail.shift(); }
+  return head.concat(tail);
+}
+async function ask(userText, opts = {}) {
+  S.turns.push({ role: 'user', content: userText });
+  S.ctl = new AbortController();
+  try {
+    const res = await callLLM(S.system, trimmed(), { maxTokens: opts.maxTokens || 1500, signal: S.ctl.signal });
+    if (!res || typeof res !== 'object') throw { code: 'invalid_json' };
+    S.turns.push({ role: 'assistant', content: JSON.stringify(res) });
+    return res;
+  } catch (e) { S.turns.pop(); throw e; }
+}
+const errText = e => ((e && ERRS[e.code]) || 'Collegamento con il controllore interrotto. Riprova.') + (e && e.detail ? ' (' + e.detail + ')' : '');
+
+// ---------- Briefing ----------
+$('#prep').addEventListener('click', async () => {
+  initAudio();
+  S.cfg = readCfg(); try { localStorage.setItem('vfr-radio-cfg', JSON.stringify(S.cfg)); } catch {}
+  saveProv(); store.set('vfr-program', $('#program').value);
+  S.mode = 'ai'; S.system = rules(S.cfg);
+  const b = $('#prep'); b.disabled = true; b.textContent = 'Preparo il briefing…'; $('#setuperr').textContent = '';
+  try {
+    S.turns = [{ role: 'user', content: BRIEF_REQ }];
+    const ctl = new AbortController(); S.ctl = ctl;
+    const res = await callLLM(S.system, S.turns, { maxTokens: 2500, signal: ctl.signal });
+    if (!res || !Array.isArray(res.stations)) throw { code: 'invalid_json' };
+    S.turns.push({ role: 'assistant', content: JSON.stringify(res) });
+    S.brief = res; renderBrief(); show('brief');
+  } catch (e) { if (e.code !== 'cancelled') $('#setuperr').textContent = errText(e); }
+  finally { b.disabled = false; b.textContent = 'Prepara il volo'; }
+});
+
+function freqTable(tb, stations) {
+  tb.replaceChildren();
+  for (const s of stations) {
+    const tr = el('tr');
+    tr.append(el('td', null, s.name), el('td', 'f', s.freq));
+    const td = el('td', 'b'); const bt = el('button', null, 'STBY'); bt.title = 'Imposta in standby';
+    bt.addEventListener('click', () => { $('#f-stby').value = s.freq; });
+    td.append(bt); tr.append(td); tb.append(tr);
+  }
+}
+function renderBrief() {
+  const b = S.brief;
+  $('#b-title').textContent = `${b.airport?.icao || ''} ${b.airport?.name || ''}`.trim() || 'Briefing';
+  $('#b-sub').textContent = `${S.cfg.cs} · ${S.cfg.ac} · pista ${b.runway || '—'}`;
+  freqTable($('#b-freqs'), b.stations.filter(s => s.freq));
+  $('#b-route').textContent = b.route || '';
+  $('#b-vrps').textContent = (b.vrps || []).join(' · ') || '—';
+  $('#b-sit').textContent = b.situation || '';
+  $('#b-disc').textContent = b.disclaimer || 'Dati generati per l\'addestramento: non usarli per voli reali.';
+}
+$('#back').addEventListener('click', () => show('setup'));
+$('#start').addEventListener('click', () => { initAudio(); startSession(); });
+
+// ---------- Sessione ----------
+function startSession() {
+  const b = S.brief;
+  $('#log').replaceChildren(); S.transcript = [];
+  S.phase = 'parking'; S.assigned = b.squawk || '7000';
+  const first = b.stations.find(s => s.type !== 'atis');
+  S.act = '121.500';
+  $('#f-stby').value = ''; $('#sq').value = '7000';
+  freqTable($('#s-freqs'), b.stations.filter(s => s.freq));
+  $('#s-vrps').textContent = 'Punti VFR: ' + ((b.vrps || []).join(' · ') || '—');
+  setSit(b.situation, S.cfg.hints ? 'Ascolta l\'ATIS, poi sintonizza il primo ente e chiamalo.' : '');
+  renderRadio(); renderRail(); show('session');
+  sys(`Sessione iniziata. Radio accesa su ${S.act}: sintonizza le frequenze dalla tabella o scrivile in standby e premi ⇄.`);
+}
+function stationFor(freq) { return (S.brief?.stations || []).find(s => s.freq && parseFloat(s.freq).toFixed(3) === parseFloat(freq).toFixed(3)); }
+function renderRadio() {
+  $('#f-act').textContent = S.act || '---.---';
+  const st = stationFor(S.act); $('#st-name').textContent = st ? st.name : 'nessun ente';
+  const a = $('#sq-ass'); a.textContent = 'assegnato ' + S.assigned;
+  a.classList.toggle('mismatch', $('#sq').value.trim() !== S.assigned);
+}
+function renderRail() {
+  const r = $('#rail'); r.replaceChildren(); const idx = PHASES.findIndex(p => p[0] === S.phase);
+  PHASES.forEach(([k, l], i) => r.append(el('span', i < idx ? 'done' : i === idx ? 'now' : '', l)));
+}
+function setSit(sit, hint) {
+  if (sit) $('#sit').textContent = sit;
+  const h = $('#hint'); h.hidden = !hint; h.textContent = hint ? 'Ora: ' + hint : '';
+}
+$('#sq').addEventListener('input', renderRadio);
+$('#swap').addEventListener('click', () => {
+  initAudio();
+  const v = $('#f-stby').value.trim().replace(',', '.');
+  if (!/^1[1-3]\d\.\d{1,3}$/.test(v)) { $('#f-stby').focus(); $('#f-stby').setCustomValidity('Frequenza VHF tra 118.000 e 136.975'); $('#f-stby').reportValidity(); return; }
+  $('#f-stby').setCustomValidity('');
+  const prev = S.act; S.act = parseFloat(v).toFixed(3); $('#f-stby').value = prev; renderRadio();
+  const st = stationFor(S.act);
+  if (st && st.type === 'atis' && S.brief?.atis) {
+    const text = S.mode === 'offline' ? S.offline.atis : S.brief.atis;
+    addAtc({ station: st.name, freq: S.act, text, to_me: false }, true);
+    say(text, st.name, false);
+  }
+});
+$('#f-stby').addEventListener('input', () => $('#f-stby').setCustomValidity(''));
+$('#f-stby').addEventListener('keydown', e => { if (e.key === 'Enter') $('#swap').click(); });
+
+function scrollEnd() { requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })); }
+function sys(t) { $('#log').append(el('div', 'msg sys', t)); scrollEnd(); }
+function renderGarbled(node, text) {
+  const parts = text.split(/(\[\s*(?:\.\.\.|…)\s*\])/);
+  for (const p of parts) { if (/^\[\s*(?:\.\.\.|…)\s*\]$/.test(p)) node.append(el('span', 'garble', '▒▒▒▒')); else node.append(p); }
+}
+function addAtc(m, isAtis) {
+  const d = el('div', 'msg atc' + (m.to_me === false && !isAtis ? ' other' : '') + (isAtis ? ' atis' : ''));
+  const meta = el('div', 'meta'); meta.append(el('span', 'who', m.station || 'ATC'), el('span', null, m.freq || S.act));
+  const pb = el('button', 'play', '▶'); pb.setAttribute('aria-label', 'Riascolta'); pb.addEventListener('click', () => { initAudio(); say(m.text, m.station, m.to_me === false); });
+  meta.append(pb);
+  const t = el('div', 'txt'); renderGarbled(t, m.text || '');
+  d.append(meta, t);
+  if (S.cfg.showatc !== 'always') { d.classList.add('hidden-txt'); t.title = 'Tocca per leggere'; t.addEventListener('click', () => d.classList.remove('hidden-txt')); }
+  $('#log').append(d); scrollEnd();
+  if (m.to_me !== false || isAtis) S.lastAtc = m;
+  S.transcript.push((m.station || 'ATC') + ': ' + m.text);
+  return d;
+}
+function revealAfter() { if (S.cfg.showatc === 'after') document.querySelectorAll('.msg.hidden-txt').forEach(d => d.classList.remove('hidden-txt')); }
+function addMe(text) {
+  const d = el('div', 'msg me');
+  const meta = el('div', 'meta'); meta.append(el('span', 'who', 'Tu · ' + S.cfg.cs), el('span', null, S.act + ' · XPDR ' + ($('#sq').value || '----')));
+  d.append(meta, el('div', 'txt', text)); $('#log').append(d); scrollEnd();
+  S.transcript.push('PILOTA (' + S.act + '): ' + text);
+  return d;
+}
+function addEval(node, ev) {
+  if (!ev || !ev.rating) return;
+  S.evals = S.evals || []; S.evals.push(ev);
+  S.transcript.push('   -> ' + ({ ok: 'corretta', minor: 'imprecisa', error: 'errata' }[ev.rating] || ev.rating) + ((ev.issues || []).length ? ': ' + ev.issues.join('; ') : '') + (ev.correct && ev.rating !== 'ok' ? ' | corretta: ' + ev.correct : ''));
+  if (S.cfg.feedback !== 'immediate') return;
+  const box = el('div', 'eval');
+  const lbl = { ok: 'Corretta', minor: 'Imprecisa', error: 'Errata' }[ev.rating] || ev.rating;
+  const r = el('div', 'row'); r.append(el('span', 'badge ' + ev.rating, lbl)); box.append(r);
+  if (ev.issues && ev.issues.length) { const ul = el('ul'); for (const i of ev.issues) ul.append(el('li', null, i)); box.append(ul); }
+  if (ev.correct && ev.rating !== 'ok') { box.append(el('span', 'label', 'Fraseologia corretta')); box.append(el('div', 'correct', ev.correct)); }
+  node.append(box); scrollEnd();
+}
+function thinking(on) {
+  const ex = $('#log .thinking'); if (ex) ex.remove();
+  if (on) { $('#log').append(el('div', 'thinking', 'in ascolto')); scrollEnd(); }
+}
+function setBusy(b) { S.busy = b; $('#tx').disabled = b; $('#adv').disabled = b; }
+
+function handleReply(res, meNode) {
+  for (const m of (res.atc || [])) { if (!m || !m.text) continue; addAtc(m); say(m.text, m.station, m.to_me === false); }
+  if (meNode && res.eval) addEval(meNode, res.eval);
+  if (res.squawk) S.assigned = String(res.squawk);
+  if (res.phase && PHASES.some(p => p[0] === res.phase)) S.phase = res.phase;
+  setSit(res.situation, S.cfg.hints ? res.hint : '');
+  if (res.event) { $('#evbox').hidden = false; $('#evchip').textContent = 'IMPREVISTO · ' + res.event; sys('Imprevisto: ' + res.event); }
+  renderRadio(); renderRail();
+  if (res.done) sys('Volo concluso. Premi “Termina e debriefing” per la valutazione.');
+}
+
+async function transmit() {
+  const text = $('#txt').value.trim(); if (!text || S.busy) return;
+  initAudio(); stopSpeech(); revealAfter(); click();
+  $('#txt').value = '';
+  const me = addMe(text);
+  if (S.mode === 'offline') { offTx(text, me); return; }
+  setBusy(true); thinking(true);
+  const st = stationFor(S.act);
+  const msg = `TX PILOTA su ${S.act} (${st ? st.name : 'nessun ente su questa frequenza'}), squawk impostato ${$('#sq').value || '----'}:\n«${text}»`;
+  try { handleReply(await ask(msg), me); }
+  catch (e) { if (e.code !== 'cancelled') sys(errText(e)); }
+  finally { thinking(false); setBusy(false); }
+}
+async function advance() {
+  if (S.busy) return; initAudio(); revealAfter();
+  if (S.mode === 'offline') { offAdvance(); return; }
+  setBusy(true); thinking(true); sys('Il volo prosegue…');
+  const st = stationFor(S.act);
+  try { handleReply(await ask(`AVANZA. Il pilota prosegue senza trasmettere. Frequenza attiva ${S.act} (${st ? st.name : 'nessun ente'}), squawk impostato ${$('#sq').value || '----'}.`), null); }
+  catch (e) { if (e.code !== 'cancelled') sys(errText(e)); }
+  finally { thinking(false); setBusy(false); }
+}
+$('#tx').addEventListener('click', transmit);
+$('#txt').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); transmit(); } });
+$('#adv').addEventListener('click', advance);
+$('#replay').addEventListener('click', () => { initAudio(); if (S.lastAtc) { stopSpeech(); say(S.lastAtc.text, S.lastAtc.station, false); } });
+document.querySelectorAll('.testaudio').forEach(b => b.addEventListener('click', testAudio));
+$('#stop').addEventListener('click', () => { stopSpeech(); S.ctl?.abort(); });
+
+// ---------- Debriefing ----------
+$('#end').addEventListener('click', async () => {
+  stopSpeech(); if (S.busy) S.ctl?.abort();
+  show('debrief'); $('#d-score').textContent = '…'; $('#d-sum').textContent = 'Preparo il debriefing…';
+  for (const id of ['#d-good', '#d-bad', '#d-pairs']) $(id).replaceChildren();
+  if (S.mode === 'offline') { offDebrief(); return; }
+  try {
+    const r = await ask('Sessione terminata. Fai il DEBRIEFING dell\'intera sessione, in italiano, come un istruttore di volo. Rispondi solo con JSON: {"score":0-100,"summary":"3-4 frasi","strengths":["..."],"improve":["..."],"phrases":[{"wrong":"cosa ha detto il pilota","right":"come andava detto"}]}', { maxTokens: 2500 });
+    renderDebrief(r);
+  } catch (e) { $('#d-sum').textContent = errText(e); $('#d-score').textContent = '—'; }
+});
+function renderDebrief(r) {
+  $('#d-score').textContent = Number.isFinite(+r.score) ? Math.round(+r.score) : '—';
+  $('#d-sum').textContent = r.summary || '';
+  for (const s of r.strengths || []) $('#d-good').append(el('li', null, s));
+  for (const s of r.improve || []) $('#d-bad').append(el('li', null, s));
+  for (const p of r.phrases || []) { const d = el('div', 'pair'); d.append(el('div', 'w', '✗ ' + p.wrong), el('div', 'r', '✓ ' + p.right)); $('#d-pairs').append(d); }
+  if (!(r.phrases || []).length) $('#d-pairs').append(el('div', 'small', 'Nessuna frase da correggere.'));
+  S.debrief = r; saveHistory();
+}
+$('#again').addEventListener('click', () => { S.evals = []; show('setup'); window.scrollTo(0, 0); });
+$('#tolog').addEventListener('click', () => show('session'));
+
+// ---------- Modalità offline: script fisso in inglese ----------
+$('#offline').addEventListener('click', () => {
+  initAudio(); S.cfg = readCfg(); S.mode = 'offline'; S.evals = [];
+  try { localStorage.setItem('vfr-radio-cfg', JSON.stringify(readCfg())); } catch {}
+  if (isLucca(S.cfg)) { S.cfg.lang = 'it'; buildLucca(); } else { S.cfg.lang = 'en'; buildOffline(); }
+  renderBrief(); show('brief');
+});
+function buildOffline() {
+  const c = S.cfg, CS = c.cs, AB = (c.cs[0] + '-' + c.cs.replace(/[^A-Z]/gi, '').slice(-2)).toUpperCase();
+  const name = (c.dep.replace(/^[A-Z]{4}\s*/, '') || 'Training').split(' ')[0];
+  const F = { atis: '127.255', gnd: '121.805', twr: '118.705', info: '126.755' };
+  const full = csLetters(CS), ab = csAbbr(CS);
+  const cs = { k: 'nominativo', f: n => n.compact.includes(full) || n.compact.includes(full.slice(1)) || n.compact.includes(ab) };
+  const any = (k, ...w) => ({ k, f: n => w.some(x => n.text.includes(' ' + x + ' ') || n.text.includes(x)) });
+  const num = (k, ...x) => ({ k, f: n => x.some(v => n.digits.includes(v)) });
+  const tok = (k, t) => ({ k, f: n => n.toks.has(t) });
+  const ev = c.ev, X = [];
+  const P = (o) => X.push(o);
+  P({ freq: F.gnd, st: name + ' Ground', phase: 'parking', sit: `Sei al parcheggio, motore avviato, ATIS ascoltato. Chiama ${name} Ground per il rullaggio.`, hint: 'Chiamata iniziale: ente, nominativo, tipo, posizione, ATIS ricevuto, richiesta di rullaggio per volo VFR locale.',
+    call: [cs, tok('informazione ATIS (Bravo)', 'b'), any('richiesta di rullaggio', 'taxi')],
+    reply: `${CS}, ${name} Ground, taxi to holding point Alpha runway 27, QNH 1015, squawk 7012.`,
+    rb: [num('pista 27', '27'), any('holding point', 'holding'), num('QNH 1015', '1015'), num('squawk 7012', '7012'), cs], ack: `${AB}, readback correct.`, squawk: '7012', after: 'Rulli verso il punto attesa Alpha. Imposta lo squawk 7012.' });
+  P({ atcFirst: true, freq: F.gnd, st: name + ' Ground', phase: 'taxi', sit: 'Sei al punto attesa Alpha, prova motore completata.',
+    reply: `${AB}, contact ${name} Tower 118.705.`, rb: [num('frequenza 118.705', '118705', '1187'), cs], hint: 'Collaziona la frequenza, poi sintonizzala.' });
+  P({ freq: F.twr, st: name + ' Tower', phase: 'departure', sit: 'Al punto attesa Alpha pista 27, pronto per la partenza.', hint: 'Chiama la Torre: nominativo, posizione, pronto alla partenza.',
+    call: [cs, any('pronto alla partenza', 'ready'), num('pista 27', '27')] });
+  if (ev.hold) {
+    X[X.length - 1].reply = `${AB}, hold position, traffic on short final.`; X[X.length - 1].rb = [any('holding position', 'holding', 'hold position'), cs];
+    P({ atcFirst: true, freq: F.twr, st: name + ' Tower', phase: 'departure', sit: 'Il traffico è atterrato e ha liberato la pista.' });
+  }
+  const to = X[X.length - 1];
+  to.reply = `${AB}, wind 260 degrees 8 knots, runway 27 cleared for take-off, report leaving the control zone via November.`;
+  to.rb = [num('pista 27', '27'), any('autorizzazione al decollo', 'cleared for take off', 'cleared for takeoff', 'cleared take off', 'cleared for take'), tok('punto November', 'n'), cs];
+  to.after = 'Decollo e salita verso November a 1500 ft.';
+  P({ freq: F.twr, st: name + ' Tower', phase: 'departure', sit: 'Sei su November, 1500 ft, in uscita dalla zona di controllo.', hint: 'Riporta in uscita da November come richiesto.',
+    call: [cs, tok('punto November', 'n'), any('in uscita', 'leaving')], reply: `${AB}, roger, contact ${name} Information 126.755, good day.`, rb: [num('frequenza 126.755', '126755', '1267'), cs] });
+  if (ev.freqchange) X[X.length - 1].reply = `${AB}, roger, squawk 7000, contact ${name} Information 126.755, good day.`, X[X.length - 1].rb.push(num('squawk 7000', '7000')), X[X.length - 1].squawk = '7000';
+  P({ freq: F.info, st: name + ' Information', phase: 'enroute', sit: 'Fuori dalla zona, in area di lavoro a nord di November, 2000 ft.', hint: 'Chiamata iniziale al FIS: nominativo, tipo, posizione, quota, intenzioni.',
+    call: [cs, any('posizione', ' n ', 'north', 'nord'), any('quota', 'feet', 'ft', 'piedi')], reply: `${AB}, ${name} Information, QNH 1015, no reported traffic, report before re-entering the control zone.`, rb: [num('QNH 1015', '1015'), cs] });
+  if (ev.trafficinfo) X[X.length - 1].reply = `${AB}, ${name} Information, QNH 1015, traffic a Piper at your 2 o'clock, 3 miles, same altitude, report in sight.`, X[X.length - 1].rb = [num('QNH 1015', '1015'), any('ricerca/vista traffico', 'looking out', 'traffic in sight', 'in sight', 'negative contact'), cs];
+  P({ freq: F.twr, st: name + ' Tower', phase: 'arrival', sit: 'Lavoro in area concluso. Sei a 3 minuti da November, 1500 ft, per il rientro.', hint: 'Chiama la Torre per il rientro: nominativo, posizione, quota, intenzioni (atterraggio).',
+    call: [cs, tok('punto November', 'n'), any('intenzioni', 'landing', 'full stop', 'join', 'rejoin', 'touch')], reply: `${AB}, enter the control zone via November, join right downwind runway 27, QNH 1015, report downwind.`,
+    rb: [any('sottovento', 'downwind'), num('pista 27', '27'), num('QNH 1015', '1015'), cs] });
+  if (ev.rwychange) X[X.length - 1].reply = `${AB}, runway in use now 09, enter via November, join left downwind runway 09, QNH 1015, report downwind.`, X[X.length - 1].rb = [any('sottovento', 'downwind'), num('pista 09', '09'), num('QNH 1015', '1015'), cs];
+  const R = ev.rwychange ? '09' : '27';
+  P({ freq: F.twr, st: name + ' Tower', phase: 'circuit', sit: `Sei in sottovento pista ${R}.`, hint: 'Riporta in sottovento.',
+    call: [cs, any('sottovento', 'downwind')], reply: ev.trafficinfo ? `${AB}, number 2, follow the Cessna on base.` : `${AB}, number 1, report final.`,
+    rb: ev.trafficinfo ? [any('numero 2', ' 2 '), any('seguire il traffico', 'follow', 'in sight'), cs] : [cs] });
+  P({ freq: F.twr, st: name + ' Tower', phase: 'circuit', sit: `Sei in finale pista ${R}.`, hint: 'Riporta in finale.', call: [cs, any('finale', 'final')] });
+  if (ev.goaround) {
+    X[X.length - 1].reply = `${AB}, go around, I say again, go around, vehicle on the runway.`; X[X.length - 1].rb = [any('riattaccata', 'going around', 'go around'), cs];
+    X[X.length - 1].after = 'Riattaccata: salita a 1000 ft e nuovo circuito.';
+    P({ freq: F.twr, st: name + ' Tower', phase: 'circuit', sit: `Di nuovo in sottovento pista ${R}, dopo la riattaccata.`, hint: 'Riporta di nuovo in sottovento.', call: [cs, any('sottovento', 'downwind')], reply: `${AB}, number 1, report final.`, rb: [cs] });
+    P({ freq: F.twr, st: name + ' Tower', phase: 'circuit', sit: `Sei in finale pista ${R}.`, hint: 'Riporta in finale.', call: [cs, any('finale', 'final')] });
+  }
+  const fin = X[X.length - 1];
+  fin.reply = `${AB}, runway ${R}, cleared to land, wind 250 degrees 6 knots.`; fin.rb = [num('pista ' + R, R), any('autorizzazione all\'atterraggio', 'cleared to land'), cs]; fin.after = 'Atterraggio. Libera la pista al primo raccordo.';
+  P({ freq: F.twr, st: name + ' Tower', phase: 'landed', sit: 'Hai liberato la pista sul raccordo Alpha.', hint: 'Riporta pista libera.', call: [cs, any('pista libera', 'vacated')], reply: `${AB}, contact ${name} Ground 121.805.`, rb: [num('frequenza 121.805', '121805', '1218'), cs] });
+  P({ freq: F.gnd, st: name + ' Ground', phase: 'landed', sit: 'Fermo sul raccordo Alpha, fuori pista.', hint: 'Chiedi il rullaggio al parcheggio.', call: [cs, any('rullaggio/parcheggio', 'taxi', 'parking', 'apron')], reply: `${AB}, taxi to the apron via Alpha.`, rb: [any('parcheggio', 'apron', 'parking'), cs], after: 'Al parcheggio. Fine sessione.' });
+  S.offline = { X, i: 0, rb: false, CS, AB, F, atis: `${name} information Bravo. Runway in use 27. Wind 260 degrees 8 knots. Visibility 10 kilometres or more. Few clouds 3500 feet. Temperature 18, dew point 9. QNH 1015. Acknowledge information Bravo on initial contact.` };
+  S.brief = { airport: { icao: c.dep.slice(0, 4).toUpperCase(), name: name + ' (dati fittizi)' }, runway: '27', squawk: '7000',
+    stations: [{ name: name + ' ATIS', type: 'atis', freq: F.atis }, { name: name + ' Ground', type: 'ground', freq: F.gnd }, { name: name + ' Tower', type: 'tower', freq: F.twr }, { name: name + ' Information', type: 'info', freq: F.info }],
+    vrps: ['November'], atis: S.offline.atis,
+    route: 'Volo locale: rullaggio al punto attesa Alpha pista 27, decollo, uscita dalla zona via November, contatto con il FIS, rientro via November, circuito e atterraggio.',
+    situation: X[0].sit, disclaimer: 'Modalità offline: copione fisso in inglese con imprevisti scelti all\'avvio. Il controllo verifica le parole chiave, non la fraseologia completa.' };
+}
+function offCheck(items, text, neg) {
+  const n = norm(text); const miss = items.filter(it => !it.f(n)).map(it => it.k);
+  (neg || []).forEach(it => { if (it.f(n)) miss.push('NEG:' + it.k); });
+  return miss;
+}
+const realMiss = miss => miss.filter(m => !m.startsWith('NEG:'));
+function offAtc(text, st, freq) { const m = { station: st, freq, text, to_me: true }; addAtc(m); say(text, st, false); }
+function offEval(node, miss, kind, x) {
+  const real = realMiss(miss);
+  const ev = miss.length ? { rating: real.length ? (real.includes('nominativo') || kind === 'rb' ? 'error' : 'minor') : 'minor', issues: miss.map(m => m.startsWith('NEG:') ? m.slice(4) : 'Manca: ' + m) } : { rating: 'ok', issues: [] };
+  if (real.length && kind === 'rb') ev.correct = 'Collaziona: ' + x.rb.map(r => r.k).join(', ');
+  addEval(node, ev);
+}
+function offEnter() {
+  const O = S.offline, x = O.X[O.i];
+  if (!x) { S.phase = 'end'; renderRail(); setSit('Al parcheggio, motore spento.', ''); sys('Volo concluso. Premi “Termina e debriefing”.'); return; }
+  S.phase = x.phase; renderRail(); setSit(x.sit, S.cfg.hints ? x.hint || '' : '');
+  if (x.atcFirst) {
+    if (stationFor(S.act)?.freq !== x.freq) { setSit(x.sit, S.cfg.hints ? `${x.st} ti sta chiamando su ${x.freq}: sei sintonizzato?` : ''); }
+    O.pendingCall = true;
+    setTimeout(() => offAtcFirst(), 900);
+  }
+}
+function offAtcFirst() {
+  const O = S.offline, x = O.X[O.i]; if (!x || !O.pendingCall) return;
+  if (parseFloat(S.act).toFixed(3) !== x.freq) return; // non sintonizzato: richiamerà con "Prosegui"
+  O.pendingCall = false;
+  const txt = x.reply || `${O.AB}, wind 260 degrees 8 knots, runway 27 cleared for take-off, report leaving the control zone via November.`;
+  offAtc(txt, x.st, x.freq);
+  if (x.rb) O.rb = true; else { O.i++; offEnter(); }
+}
+function offTx(text, me) {
+  const O = S.offline, x = O.X[O.i];
+  if (!x) { sys('Il volo è concluso.'); return; }
+  if (parseFloat(S.act).toFixed(3) !== x.freq) { addEval(me, { rating: 'error', issues: [`Nessuna risposta: la frequenza attiva ${S.act} non è quella di ${x.st} (${x.freq}).`] }); return; }
+  if (O.rb) {
+    const miss0 = offCheck(x.rb, text, x.negRb); offEval(me, miss0, 'rb', x); const miss = realMiss(miss0);
+    if (miss.length && !(S.cfg.diff <= 1 && !miss.includes('nominativo'))) { setTimeout(() => offAtc(`${O.AB}, ${O.negWord || 'negative, I say again:'} ${x.reply.replace(/^[^,]+,\s*/, '')}`, x.st, x.freq), 600); return; }
+    O.rb = false; if (x.squawk) { S.assigned = x.squawk; renderRadio(); }
+    if (x.ack) setTimeout(() => offAtc(x.ack, x.st, x.freq), 600);
+    if (x.after) sys(x.after);
+    O.i++; setTimeout(offEnter, x.ack ? 2200 : 700); return;
+  }
+  if (x.atcFirst) { addEval(me, { rating: 'minor', issues: ['In questa fase è l\'ente a chiamarti: attendi o usa “Prosegui volo”.'] }); return; }
+  const miss = offCheck(x.call, text, x.neg); offEval(me, miss, 'call', x);
+  if (miss.includes('nominativo') && S.cfg.diff >= 3) { setTimeout(() => offAtc(O.sayagain || 'Station calling, say again your callsign.', x.st, x.freq), 600); return; }
+  setTimeout(() => offAtc(x.reply, x.st, x.freq), 700);
+  if (x.rb) O.rb = true; else { if (x.after) sys(x.after); O.i++; setTimeout(offEnter, 1500); }
+}
+function offAdvance() {
+  const O = S.offline, x = O.X[O.i];
+  if (!x) return;
+  if (x.atcFirst && O.pendingCall) {
+    if (parseFloat(S.act).toFixed(3) !== x.freq) { sys(`${x.st} ti sta chiamando su ${x.freq}, ma non sei sintonizzato.`); return; }
+    offAtcFirst(); return;
+  }
+  if (O.rb) { sys('L\'ente attende il tuo readback.'); return; }
+  sys('Il volo prosegue: è il momento di trasmettere.');
+}
+function offDebrief() {
+  const ev = S.evals || []; const tot = ev.length || 1;
+  const pts = ev.reduce((a, e) => a + (e.rating === 'ok' ? 1 : e.rating === 'minor' ? 0.5 : 0), 0);
+  const missing = {}; ev.forEach(e => (e.issues || []).forEach(i => { missing[i] = (missing[i] || 0) + 1; }));
+  const top = Object.entries(missing).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  renderDebrief({ score: Math.round(pts / tot * 100), summary: `${ev.length} trasmissioni valutate: ${ev.filter(e => e.rating === 'ok').length} corrette. La modalità offline controlla le parole chiave; per una valutazione della fraseologia completa usa il controllore Claude.`,
+    strengths: ev.filter(e => e.rating === 'ok').length ? ['Readback completi in ' + ev.filter(e => e.rating === 'ok').length + ' trasmissioni.'] : [],
+    improve: top.map(([k, v]) => `${k} (${v} volte)`), phrases: [] });
+}
+
+// ---------- Programma dell'istruttore e preset ----------
+$('#program').value = store.get('vfr-program', DEFAULT_PROGRAM);
+$('#program').addEventListener('input', () => store.set('vfr-program', $('#program').value));
+$('#program-reset').addEventListener('click', () => { $('#program').value = DEFAULT_PROGRAM; store.set('vfr-program', DEFAULT_PROGRAM); });
+$('#preset-lucca').addEventListener('click', () => {
+  $('#dep').value = 'LIQL Lucca Tassignano';
+  setRadio('ats', 'afis'); setRadio('lang', 'it'); setRadio('ftype', 'circuits'); syncDest();
+  if (!$('#program').value.trim()) { $('#program').value = DEFAULT_PROGRAM; store.set('vfr-program', DEFAULT_PROGRAM); }
+  $('#setuperr').style.color = 'var(--ok)';
+  $('#setuperr').textContent = 'Preset Lucca applicato: Tassignano, AFIS, italiano, circuiti.';
+  setTimeout(() => { $('#setuperr').textContent = ''; $('#setuperr').style.color = ''; }, 4000);
+});
+
+// ---------- Microfono: tieni premuto per parlare ----------
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, recOn = false, recFinal = '', recUsed = false;
+function micStart(e) {
+  if (e) e.preventDefault();
+  if (recOn || S.busy) return;
+  if (!SR) { sys('Il riconoscimento vocale non è disponibile su questo browser. Usa Chrome su Android.'); return; }
+  initAudio(); stopSpeech(); revealAfter();
+  rec = new SR();
+  rec.lang = S.cfg.lang === 'it' ? 'it-IT' : 'en-GB';
+  rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
+  recFinal = ''; recUsed = true;
+  const base = $('#txt').value.trim();
+  rec.onresult = ev => {
+    let interim = '';
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const r = ev.results[i];
+      if (r.isFinal) recFinal += r[0].transcript + ' '; else interim += r[0].transcript;
+    }
+    $('#txt').value = (base ? base + ' ' : '') + (recFinal + interim).trim();
+  };
+  rec.onerror = ev => {
+    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') sys('Microfono bloccato. Consenti il microfono per questa app: Impostazioni di Chrome → Impostazioni sito → Microfono.');
+    else if (ev.error === 'network') sys('Il riconoscimento vocale richiede la connessione a internet.');
+    else if (ev.error !== 'no-speech' && ev.error !== 'aborted') sys('Microfono: errore ' + ev.error + '.');
+  };
+  rec.onend = () => {
+    recOn = false; $('#mic').classList.remove('on'); $('#mic').textContent = 'PARLA'; noise(false);
+    const t = $('#txt').value.trim();
+    if (t && recUsed && S.cfg.aftermic !== 'edit') { recUsed = false; transmit(); }
+    else if (t) $('#txt').focus();
+  };
+  try { rec.start(); recOn = true; $('#mic').classList.add('on'); $('#mic').textContent = 'IN ONDA'; click(); noise(true); }
+  catch { recOn = false; }
+}
+function micStop(e) {
+  if (e) e.preventDefault();
+  if (!recOn || !rec) return;
+  setTimeout(() => { try { rec.stop(); } catch {} }, 350); // coda breve: non tagliare l'ultima parola
+}
+const mic = $('#mic');
+mic.addEventListener('pointerdown', micStart);
+mic.addEventListener('pointerup', micStop);
+mic.addEventListener('pointercancel', micStop);
+mic.addEventListener('contextmenu', e => e.preventDefault());
+mic.addEventListener('keydown', e => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) micStart(e); });
+mic.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') micStop(e); });
+
+// ---------- Trascrizione e sessioni salvate ----------
+function transcriptText() {
+  const b = S.brief || {};
+  const head = [
+    'RADIO VFR - trascrizione sessione',
+    'Data: ' + new Date().toLocaleString('it-IT'),
+    'Aeroporto: ' + [b.airport && b.airport.icao, b.airport && b.airport.name].filter(Boolean).join(' '),
+    'Nominativo: ' + S.cfg.cs + ' · ' + S.cfg.ac + ' · difficoltà ' + S.cfg.diff + '/5 · ' + (S.mode === 'offline' ? 'offline' : 'controllore ' + prov()),
+    ''
+  ];
+  const tail = [];
+  if (S.debrief) {
+    tail.push('', 'DEBRIEFING', 'Punteggio: ' + (S.debrief.score ?? '—') + '/100', S.debrief.summary || '');
+    (S.debrief.strengths || []).forEach(x => tail.push('+ ' + x));
+    (S.debrief.improve || []).forEach(x => tail.push('- ' + x));
+    (S.debrief.phrases || []).forEach(p => tail.push('  detto: ' + p.wrong, '  corretto: ' + p.right));
+  }
+  return head.concat(S.transcript, tail).join('\n');
+}
+function downloadText(name, text) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+  a.download = name; document.body.append(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+}
+const fileName = () => 'radio-vfr-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.txt';
+$('#savetx').addEventListener('click', () => downloadText(fileName(), transcriptText()));
+$('#savetx2').addEventListener('click', () => downloadText(fileName(), transcriptText()));
+function getHistory() { try { return JSON.parse(store.get('vfr-history', '[]')) || []; } catch { return []; } }
+function saveHistory() {
+  const h = getHistory(), b = S.brief || {};
+  h.unshift({ d: new Date().toISOString(), ap: [b.airport && b.airport.icao, b.airport && b.airport.name].filter(Boolean).join(' '), score: S.debrief && S.debrief.score, text: transcriptText() });
+  store.set('vfr-history', JSON.stringify(h.slice(0, 25)));
+  renderHistory();
+}
+function renderHistory() {
+  const h = getHistory(), list = $('#histlist');
+  $('#histcard').hidden = !h.length; list.replaceChildren();
+  h.forEach(it => {
+    const row = el('div', 'pair');
+    const top = el('div', 'row'); top.style.justifyContent = 'space-between';
+    top.append(el('span', null, new Date(it.d).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' }) + ' · ' + (it.ap || '—') + (it.score != null ? ' · ' + Math.round(it.score) + '/100' : '')));
+    const b = el('button', null, 'Scarica'); b.style.padding = '3px 10px';
+    b.addEventListener('click', () => downloadText('radio-vfr-' + it.d.slice(0, 16).replace(/[:T]/g, '-') + '.txt', it.text));
+    top.append(b); row.append(top); list.append(row);
+  });
+}
+let clearArmed = false;
+$('#histclear').addEventListener('click', () => {
+  if (!clearArmed) { clearArmed = true; $('#histconfirm').textContent = 'Tocca di nuovo per cancellare tutte le sessioni.'; setTimeout(() => { clearArmed = false; $('#histconfirm').textContent = ''; }, 4000); return; }
+  store.set('vfr-history', '[]'); clearArmed = false; $('#histconfirm').textContent = ''; renderHistory();
+});
+renderHistory();
+
+// ---------- Schermo acceso durante la sessione ----------
+let wakeLock = null;
+async function keepAwake() { try { if ('wakeLock' in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } } catch {} }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !$('#v-session').hidden) keepAwake(); });
+$('#start').addEventListener('click', keepAwake);
+
+// ---------- Copione offline: Lucca Tassignano, dal documento dell'istruttore ----------
+function isLucca(c) { return /liql|lucca|tassignano/i.test(c.dep || ''); }
+function buildLucca() {
+  const c = S.cfg, CS = c.cs, AB = (c.cs[0] + '-' + c.cs.replace(/[^A-Z]/gi, '').slice(-2)).toUpperCase();
+  const full = csLetters(CS), ab = csAbbr(CS);
+  const csF = { k: 'nominativo completo (l\'abbreviato solo dopo che lo usa l\'AFIS)', f: n => n.compact.includes(full) || n.compact.includes(full.slice(1)) };
+  const cs = { k: 'nominativo', f: n => n.compact.includes(full) || n.compact.includes(full.slice(1)) || n.compact.includes(ab) };
+  const any = (k, ...w) => ({ k, f: n => w.some(x => n.text.includes(x)) });
+  const num = (k, ...x) => ({ k, f: n => x.some(v => n.digits.includes(v)) });
+  const lucca = any('chiamata a “Lucca Informazioni”', 'lucca', 'informazion');
+  const noWind = { k: 'Il vento non va ripetuto, salvo raffiche (pista e QNH invece sempre)', f: n => n.text.includes('nodi') || n.text.includes(' vento ') };
+  const noTakeoff = { k: 'A terra si dice PARTENZA: DECOLLO solo dopo che l\'ha detto l\'AFIS', f: n => n.text.includes('decoll') };
+  const R = Math.random() < 0.5 ? '10' : '28', W = R === '10' ? '090' : '270', W2 = R === '10' ? '100' : '260';
+  const side = R === '10' ? 'destro' : 'sinistro';
+  const weekday = Math.random() < 0.6;
+  const zona = c.ftype === 'circuits' ? 'circuito' : 'il Padule';
+  const F = { afis: '122.505' }, ST = 'Lucca Informazioni', ev = c.ev, X = [];
+  const P = o => { o.freq = F.afis; o.st = ST; X.push(o); return o; };
+  P({ phase: 'parking', sit: 'Sei al parcheggio di Tassignano, prima della messa in moto. ' + (weekday ? 'Oggi è un giorno feriale: possibili lanci militari, quindi serve la richiesta di messa in moto.' : 'Oggi è sabato: niente lanci militari, la richiesta di messa in moto non serve.') + ' Sintonizza Lucca Informazioni 122.505 e stabilisci il contatto.',
+    hint: 'Chiamata iniziale con il nominativo completo: ente, saluto, nominativo.',
+    call: [lucca, csF], reply: `${AB}, Lucca Informazioni, buongiorno, avanti.` });
+  if (weekday) {
+    const st = P({ phase: 'parking', sit: 'Contatto stabilito. Chiedi la messa in moto.', hint: 'Chiedi la messa in moto. Ora puoi usare il nominativo abbreviato.',
+      call: [lucca, cs, any('richiesta di messa in moto', 'moto')] });
+    if (ev.hold) {
+      st.reply = `${AB}, negativo per la messa in moto, attività di lanci in corso.`; st.rb = [any('ricevuto, in attesa', 'attesa'), cs];
+      P({ atcFirst: true, phase: 'parking', sit: 'Dopo qualche minuto i lanci sono terminati.', reply: `${AB}, messa in moto a discrezione.`, rb: [any('a discrezione', 'discrezione'), any('messa in moto', 'moto'), cs] });
+    } else { st.reply = `${AB}, messa in moto a discrezione.`; st.rb = [any('a discrezione', 'discrezione'), any('messa in moto', 'moto'), cs]; }
+  }
+  P({ phase: 'parking', sit: `Motore avviato, controlli dopo l'avviamento completati. Volo scuola, 2 persone a bordo, 6 ore di autonomia, zona di lavoro: ${zona}.`,
+    hint: 'Chiedi le informazioni per il rullaggio e dai la notifica di volo: tipo di volo, persone a bordo, autonomia, zona di lavoro.',
+    call: [lucca, cs, any('posizione: al parcheggio', 'parcheggio'), any('informazioni per il rullaggio', 'rullaggio'), any('persone a bordo', 'persone', 'bordo'), any('autonomia', 'autonomia'), any('zona di lavoro', 'zona', 'padule', 'circuito')],
+    reply: `${AB}, a discrezione il rullaggio al punto attesa Alfa, la pista in uso è la ${R}, QNH 1014, vento da ${W} gradi 10 nodi.`,
+    rb: [num('pista in uso ' + R, R), num('QNH 1014', '1014'), any('riporterà al punto attesa', 'punto attesa', 'riporter'), cs], negRb: [noWind],
+    after: 'Rulli verso il punto attesa Alfa. Prove motore e controlli prima del decollo.' });
+  if (R === '10') {
+    const h = P({ phase: 'departure', sit: 'Al punto attesa Alfa, prove motore e controlli pre-decollo completati.', hint: 'Riporta al punto attesa: pronto all\'allineamento e partenza 10.',
+      call: [lucca, cs, any('al punto attesa', 'punto attesa'), any('pronto', 'pronto'), any('partenza', 'partenza'), num('pista 10', '10')], neg: [noTakeoff] });
+    if (ev.hold) {
+      h.reply = `${AB}, allineamento e attesa 10.`; h.rb = [any('allineamento e attesa', 'attesa'), num('pista 10', '10'), cs];
+      P({ atcFirst: true, phase: 'departure', sit: 'Sei allineato pista 10. Il traffico ha liberato la pista.', reply: `${AB}, decollo 10 a discrezione.`, rb: [any('decollo', 'decoll'), any('a discrezione', 'discrezione'), num('pista 10', '10'), cs], after: 'Decollo e salita in circuito.' });
+    } else { h.reply = `${AB}, allineamento e decollo 10 a discrezione.`; h.rb = [any('allineamento', 'allineamento'), any('decollo', 'decoll'), any('a discrezione', 'discrezione'), num('pista 10', '10'), cs]; h.after = 'Decollo e salita in circuito.'; }
+  } else {
+    P({ phase: 'departure', sit: 'Al punto attesa Alfa, prove motore e controlli pre-decollo completati. Per la 28 serve il contropista.', hint: 'Riporta al punto attesa: pronto al contropista 28.',
+      call: [lucca, cs, any('al punto attesa', 'punto attesa'), any('pronto', 'pronto'), any('contropista', 'contropista'), num('pista 28', '28')], neg: [noTakeoff],
+      reply: `${AB}, a discrezione il contropista 28.`, rb: [any('contropista', 'contropista'), any('a discrezione', 'discrezione'), num('pista 28', '28'), cs] });
+    P({ phase: 'departure', sit: 'Contropista completato: sei allineato pista 28.', hint: 'Riporta allineato e pronto alla partenza 28.',
+      call: [lucca, cs, any('pronto alla partenza', 'partenza'), num('pista 28', '28')], neg: [noTakeoff],
+      reply: `${AB}, decollo 28 a discrezione.`, rb: [any('decollo', 'decoll'), any('a discrezione', 'discrezione'), num('pista 28', '28'), cs], after: 'Decollo e salita in circuito.' });
+  }
+  const dw = () => P({ phase: 'circuit', sit: `Sei all'inizio del sottovento ${side} ${R}, prima dei controlli.`, hint: `Riporta in sottovento ${side} ${R}.`,
+    call: [lucca, cs, any('sottovento', 'sottovento'), any('lato ' + side, side), num('pista ' + R, R)],
+    reply: `${AB}, Lucca Informazioni, ricevuto, riportate in finale ${R}.`, rb: [any('riporterò in finale', 'finale'), cs] });
+  const d1 = dw();
+  if (ev.trafficinfo) {
+    d1.reply = `${AB}, Lucca Informazioni, ricevuto, traffico un Cessna in finale ${R}, riportate in base ${R}.`; d1.rb = [any('traffico: in vista o ricevuto', 'vista', 'ricevuto', 'traffico'), any('riporterò in base', 'base'), cs];
+    P({ phase: 'circuit', sit: `Sei in base ${R}, il Cessna è atterrato.`, hint: `Riporta in base ${R}.`, call: [lucca, cs, any('base', 'base'), num('pista ' + R, R)], reply: `${AB}, ricevuto, riportate in finale ${R}.`, rb: [any('riporterò in finale', 'finale'), cs] });
+  }
+  const fin = () => P({ phase: 'circuit', sit: `Sei in finale ${R}.`, hint: `Riporta in finale ${R}.`, call: [lucca, cs, any('finale', 'finale'), num('pista ' + R, R)] });
+  let f = fin();
+  if (ev.goaround) {
+    f.reply = `${AB}, pista occupata, mezzo in pista.`; f.rb = [any('riattacco', 'riattacc'), cs]; f.after = 'Riattaccata: risali e rientri in circuito.';
+    dw(); f = fin();
+  }
+  f.reply = `${AB}, l'atterraggio ${R} a discrezione, vento da ${W2} gradi 8 nodi.`;
+  f.rb = [any('atterraggio', 'atterragg'), any('a discrezione', 'discrezione'), num('pista ' + R, R), cs]; f.negRb = [noWind]; f.after = 'Atterraggio.';
+  P({ atcFirst: true, phase: 'landed', sit: 'Atterrato, stai rallentando sulla pista.', reply: `${AB}, contropista a discrezione fino al raccordo Alfa.`,
+    rb: [any('contropista', 'contropista'), any('a discrezione', 'discrezione'), any('fino al raccordo Alfa', 'raccordo', ' a '), cs] });
+  P({ phase: 'landed', sit: 'Sei fuori pista al raccordo Alfa e rulli al parcheggio.', hint: 'Riporta al parcheggio: fine del volo.',
+    call: [lucca, cs, any('al parcheggio', 'parcheggio')], reply: `${AB}, ricevuto, buona giornata.`, after: 'Al parcheggio. Fine sessione.' });
+  S.offline = { X, i: 0, rb: false, CS, AB, F, atis: '', sayagain: 'Stazione che chiama Lucca Informazioni, ripetete il nominativo.', negWord: 'negativo, ripeto:' };
+  S.brief = { airport: { icao: 'LIQL', name: 'Lucca Tassignano' }, runway: R, squawk: '7000',
+    stations: [{ name: 'Lucca Informazioni (AFIS)', type: 'afis', freq: F.afis }], vrps: ['Padule (zona di lavoro)'], atis: '',
+    route: 'Circuito di scuola come nel documento dell\'istruttore: contatto, messa in moto nei giorni feriali, informazioni per il rullaggio e notifica di volo, punto attesa Alfa, decollo, sottovento, finale, atterraggio, contropista e parcheggio.',
+    situation: X[0].sit, disclaimer: 'Copione offline costruito sul documento del tuo istruttore. Pista in uso e imprevisti cambiano a ogni sessione. Verifica sempre frequenze e procedure su AIP e VAC.' };
+}
+
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+
+// Avvio offline: al primo ingresso nella sessione
+const _start = startSession;
+startSession = function () { _start(); if (S.mode === 'offline') { S.offline.i = 0; S.offline.rb = false; S.evals = []; sys(S.offline.negWord ? 'Modalità offline: copione di Lucca dal documento dell\'istruttore.' : 'Modalità offline: copione in inglese.'); offEnter(); } else S.evals = []; };
+})();
+</script>
+
+</body>
+</html>
