@@ -541,7 +541,9 @@ function initAudio() {
 document.addEventListener('pointerdown', initAudio, { capture: true });
 document.addEventListener('keydown', initAudio, { capture: true });
 const NOISE = { pulita: 0.006, fruscio: 0.035, disturbata: 0.08 };
+function hardMute() { try { if (noiseGain && actx) { noiseGain.gain.cancelScheduledValues(actx.currentTime); noiseGain.gain.setValueAtTime(0, actx.currentTime); } } catch {} }
 function noise(on) {
+  if (on && typeof recOn !== 'undefined' && recOn) return; // mai fruscio mentre il microfono ascolta
   if (!actx || !noiseGain) return;
   noiseGain.gain.setTargetAtTime(on ? (NOISE[S.cfg.radio] || 0.03) : 0, actx.currentTime, 0.03);
 }
@@ -575,6 +577,7 @@ const speakQ = []; let speaking = false, curSrc = null, speakToken = 0;
 function stationIdx(name) { let h = 0; for (const c of name || '') h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; }
 function say(text, station, isOther) {
   if (!S.cfg.tts) return;
+  if (typeof recOn !== 'undefined' && recOn) return;
   speakQ.push({ text, station, isOther }); if (!speaking) nextSpeak();
 }
 function useRadioVoice() { return S.cfg.voice !== 'device' && ttsState === 'ready' && actx; }
@@ -1182,12 +1185,13 @@ function micStart(e) {
     else if (ev.error !== 'no-speech' && ev.error !== 'aborted') sys('Microfono: errore ' + ev.error + '.');
   };
   rec.onend = () => {
-    recOn = false; $('#mic').classList.remove('on'); $('#mic').textContent = 'PARLA'; noise(false);
+    recOn = false; $('#mic').classList.remove('on'); $('#mic').textContent = 'PARLA';
     const t = $('#txt').value.trim();
     if (t && recUsed && S.cfg.aftermic !== 'edit') { recUsed = false; transmit(); }
     else if (t) $('#txt').focus();
   };
-  try { rec.start(); recOn = true; $('#mic').classList.add('on'); $('#mic').textContent = 'IN ONDA'; click(); noise(true); }
+  hardMute();
+  try { rec.start(); recOn = true; $('#mic').classList.add('on'); $('#mic').textContent = 'IN ONDA'; }
   catch { recOn = false; }
 }
 function micStop(e) {
